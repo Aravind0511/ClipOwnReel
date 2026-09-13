@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClipOwn - Modern Instagram Video & Reel Downloader</title>
+    <!-- Favicon & Meta -->
+    <link rel="icon" type="image/png" href="/static/images/favicon.png">
+    <link rel="shortcut icon" href="/static/images/favicon.ico">
+    <meta property="og:image" content="/static/images/clipown_brand.png">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Main Stylesheet -->
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+    <!-- Ambient Background Lighting -->
+    <div class="bg-mesh">
+        <div class="glow-orb orb-1"></div>
+        <div class="glow-orb orb-2"></div>
+        <div class="glow-orb orb-3"></div>
+    </div>
+
+    <!-- Notification Toast Container -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- Navigation Header -->
+    <header class="site-header">
+        <div class="container nav-wrapper">
+            <a href="/" class="logo">
+                <div class="logo-brand-wrap">
+                    <img src="/static/images/logo_icon.png" alt="ClipOwn Logo" class="brand-logo-img">
+                </div>
+                <span class="logo-text">Clip<span class="gradient-text">Own</span></span>
+            </a>
+
+            <nav class="nav-links">
+                <a href="#downloader" class="nav-link active">Downloader</a>
+                <a href="#features" class="nav-link">Features</a>
+                <a href="#how-it-works" class="nav-link">How It Works</a>
+                <a href="#faq" class="nav-link">FAQ</a>
+            </nav>
+
+            <div class="nav-actions">
+                <button type="button" id="settingsBtn" class="btn-settings" title="Configure Instagram Cookies / Settings">
+                    <i data-lucide="settings"></i>
+                    <span>Settings</span>
+                </button>
+                <span class="badge-tag">
+                    <span class="status-dot"></span> v1.0 Ultra HD
+                </span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main>
+        <!-- Hero Section & Downloader Input -->
+        <section id="downloader" class="hero-section">
+            <div class="container hero-content">
+                <div class="hero-badge">
+                    <i data-lucide="zap" class="icon-sm"></i>
+                    <span>Fast, Free & High Quality Instagram Downloader</span>
+                </div>
+
+                <h1 class="hero-title">
+                    Download Instagram <span class="gradient-text">Videos & Reels</span> in HD
+                </h1>
+
+                <p class="hero-subtitle">
+                    Paste any Instagram Reel, Video, or Post URL to preview and download directly to your device. No watermark, zero quality loss, and 100% free.
+                </p>
+
+                <!-- Input Card Component -->
+                <div class="downloader-card glass-panel">
+                    <form id="downloadForm" class="download-form" onsubmit="return false;">
+                        <div class="input-wrapper">
+                            <div class="input-icon">
+                                <i data-lucide="link-2"></i>
+                            </div>
+                            <input 
+                                type="text" 
+                                id="videoUrlInput" 
+                                placeholder="Paste Instagram video link (e.g. https://www.instagram.com/reel/...)" 
+                                autocomplete="off"
+                                spellcheck="false"
+                            >
+                            <div class="input-actions">
+                                <button type="button" id="clearBtn" class="btn-icon hidden" title="Clear input">
+                                    <i data-lucide="x"></i>
+                                </button>
+                                <button type="button" id="pasteBtn" class="btn-secondary" title="Paste from clipboard">
+                                    <i data-lucide="clipboard"></i>
+                                    <span>Paste</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <button type="button" id="fetchBtn" class="btn-primary">
+                            <span class="btn-text">Download</span>
+                            <i data-lucide="arrow-right" class="btn-icon-right"></i>
+                            <div class="btn-loader hidden">
+                                <div class="spinner"></div>
+                            </div>
+                        </button>
+                    </form>
+
+                    <div class="input-helpers">
+                        <div class="supported-tags">
+                            <span class="tag"><i data-lucide="film"></i> Reels</span>
+                            <span class="tag"><i data-lucide="video"></i> Videos</span>
+                            <span class="tag"><i data-lucide="image"></i> Posts</span>
+                            <span class="tag"><i data-lucide="tv"></i> IGTV</span>
+                        </div>
+                        <button type="button" id="sampleLinkBtn" class="sample-link">
+                            <i data-lucide="sparkles"></i> Try sample Reel
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Loading State Shimmer Card -->
+                <div id="loadingState" class="result-container hidden">
+                    <div class="result-card glass-panel loading-shimmer">
+                        <div class="shimmer-preview">
+                            <div class="loader-pulse">
+                                <i data-lucide="loader-2" class="spin-animation"></i>
+                                <p>Extracting high-resolution media...</p>
+                            </div>
+                        </div>
+                        <div class="shimmer-details">
+                            <div class="shimmer-line line-title"></div>
+                            <div class="shimmer-line line-author"></div>
+                            <div class="shimmer-line line-btn"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Video Preview & Download Result Card -->
+                <div id="resultState" class="result-container hidden">
+                    <div class="result-card glass-panel">
+                        <div class="result-header">
+                            <div class="result-status">
+                                <i data-lucide="check-circle-2" class="icon-success"></i>
+                                <span>Media Ready for Download</span>
+                            </div>
+                            <button id="closeResultBtn" class="btn-close-card" title="Close">
+                                <i data-lucide="x"></i>
+                            </button>
+                        </div>
+
+                        <div id="authNoticeBanner" class="auth-notice-banner hidden">
+                            <i data-lucide="info" class="banner-icon"></i>
+                            <div class="banner-text">
+                                <strong>Notice:</strong> Instagram requires authentication for this specific video. You can download our verified sample media below or <button type="button" id="openSettingsLink" class="banner-link">add your Instagram session cookie in Settings</button> for 100% direct downloads.
+                            </div>
+                        </div>
+
+                        <div class="result-content-grid">
+                            <!-- Preview Media Side -->
+                            <div class="media-preview-container">
+                                <div class="media-thumbnail-wrapper">
+                                    <img id="previewThumbnail" src="" alt="Instagram Video Preview" class="preview-img">
+                                    <div class="media-badge">
+                                        <i data-lucide="video"></i>
+                                        <span id="previewQualityBadge">1080p HD</span>
+                                    </div>
+                                    <div class="play-overlay">
+                                        <i data-lucide="play" class="play-icon"></i>
+                                    </div>
+                                    <span id="previewDuration" class="duration-badge">0:32</span>
+                                </div>
+                            </div>
+
+                            <!-- Details & Action Buttons Side -->
+                            <div class="media-info-container">
+                                <div class="creator-profile">
+                                    <img id="creatorAvatar" src="" alt="Creator Avatar" class="creator-avatar">
+                                    <div class="creator-meta">
+                                        <span id="creatorName" class="creator-username">@instagram_user</span>
+                                        <span class="source-tag"><i data-lucide="instagram"></i> Instagram Reel</span>
+                                    </div>
+                                </div>
+
+                                <h3 id="videoCaption" class="video-caption">
+                                    Captivating cinematic reel captured in 4K resolution. Perfect lighting and seamless cuts!
+                                </h3>
+
+                                <div class="media-specs">
+                                    <div class="spec-item">
+                                        <span class="spec-label">Format</span>
+                                        <span class="spec-value" id="specFormat">MP4 (H.264)</span>
+                                    </div>
+                                    <div class="spec-item">
+                                        <span class="spec-label">Resolution</span>
+                                        <span class="spec-value" id="specResolution">1080 x 1920</span>
+                                    </div>
+                                    <div class="spec-item">
+                                        <span class="spec-label">Size</span>
+                                        <span class="spec-value" id="specSize">~ 18.4 MB</span>
+                                    </div>
+                                </div>
+
+                                <!-- Action Buttons List -->
+                                <div class="download-actions-grid">
+                                    <button type="button" class="btn-download-action btn-hd" id="btnDownloadHD">
+                                        <div class="btn-action-text">
+                                            <span class="primary-text"><i data-lucide="download"></i> Download Video HD</span>
+                                            <span class="secondary-text">1080p MP4 • Original Quality</span>
+                                        </div>
+                                    </button>
+
+                                    <button type="button" class="btn-download-action btn-sd" id="btnDownloadSD">
+                                        <div class="btn-action-text">
+                                            <span class="primary-text"><i data-lucide="download"></i> Download 720p</span>
+                                            <span class="secondary-text">Fast & compact size</span>
+                                        </div>
+                                    </button>
+
+                                    <button type="button" class="btn-download-action btn-audio" id="btnDownloadAudio">
+                                        <div class="btn-action-text">
+                                            <span class="primary-text"><i data-lucide="music"></i> Download Audio Only</span>
+                                            <span class="secondary-text">High-bitrate MP3</span>
+                                        </div>
+                                    </button>
+                                </div>
+
+                                <div class="result-footer-actions">
+                                    <button type="button" id="copyDirectLinkBtn" class="btn-ghost">
+                                        <i data-lucide="copy"></i> Copy Direct Link
+                                    </button>
+                                    <button type="button" id="downloadAnotherBtn" class="btn-ghost">
+                                        <i data-lucide="refresh-cw"></i> Download Another
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- Features Showcase Section -->
+        <section id="features" class="section-padding">
+            <div class="container">
+                <div class="section-header text-center">
+                    <span class="sub-heading">Why Choose ClipOwn?</span>
+                    <h2 class="section-title">Engineered for Quality & Simplicity</h2>
+                    <p class="section-subtitle">Everything you need to save and enjoy your favorite Instagram videos without hassle or restrictions.</p>
+                </div>
+
+                <div class="features-grid">
+                    <div class="feature-card glass-panel">
+                        <div class="feature-icon-wrapper gradient-bg-1">
+                            <i data-lucide="zap"></i>
+                        </div>
+                        <h3>Ultra-Fast Downloads</h3>
+                        <p>No waiting in queues or slow processing. Instant server-accelerated video extraction at maximum bandwidth.</p>
+                    </div>
+
+                    <div class="feature-card glass-panel">
+                        <div class="feature-icon-wrapper gradient-bg-2">
+                            <i data-lucide="sparkles"></i>
+                        </div>
+                        <h3>Original HD Quality</h3>
+                        <p>Preserve crystal clear video resolutions up to 1080p Full HD without re-encoding or compression artifacts.</p>
+                    </div>
+
+                    <div class="feature-card glass-panel">
+                        <div class="feature-icon-wrapper gradient-bg-3">
+                            <i data-lucide="shield-check"></i>
+                        </div>
+                        <h3>Zero Watermarks</h3>
+                        <p>Download clean, original video files without any branding, overlays, or intrusive watermarks attached.</p>
+                    </div>
+
+                    <div class="feature-card glass-panel">
+                        <div class="feature-icon-wrapper gradient-bg-4">
+                            <i data-lucide="smartphone"></i>
+                        </div>
+                        <h3>Universal Compatibility</h3>
+                        <p>Works seamlessly across all modern browsers on iOS Safari, Android Chrome, Windows, Mac, and iPad.</p>
+                    </div>
+
+                    <div class="feature-card glass-panel">
+                        <div class="feature-icon-wrapper gradient-bg-5">
+                            <i data-lucide="music-2"></i>
+                        </div>
+                        <h3>Extract Audio / MP3</h3>
+                        <p>Love a trending reel soundtrack? Extract and save pristine audio tracks with a single click.</p>
+                    </div>
+
+                    <div class="feature-card glass-panel">
+                        <div class="feature-icon-wrapper gradient-bg-6">
+                            <i data-lucide="lock"></i>
+                        </div>
+                        <h3>Private & Safe</h3>
+                        <p>No login, no credentials required. We never track your activity or retain your downloaded videos.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- How It Works Section -->
+        <section id="how-it-works" class="section-padding bg-subtle">
+            <div class="container">
+                <div class="section-header text-center">
+                    <span class="sub-heading">Three Simple Steps</span>
+                    <h2 class="section-title">How to Download Instagram Videos</h2>
+                    <p class="section-subtitle">Saving reels and videos takes less than 5 seconds.</p>
+                </div>
+
+                <div class="steps-grid">
+                    <div class="step-card glass-panel">
+                        <div class="step-number">01</div>
+                        <div class="step-icon">
+                            <i data-lucide="copy"></i>
+                        </div>
+                        <h3>Copy Video Link</h3>
+                        <p>Open Instagram, find the reel or post you want, tap the Share or three dots icon, and select <strong>"Copy Link"</strong>.</p>
+                    </div>
+
+                    <div class="step-arrow">
+                        <i data-lucide="chevron-right"></i>
+                    </div>
+
+                    <div class="step-card glass-panel">
+                        <div class="step-number">02</div>
+                        <div class="step-icon">
+                            <i data-lucide="clipboard-paste"></i>
+                        </div>
+                        <h3>Paste into ClipOwn</h3>
+                        <p>Return here and click the <strong>"Paste"</strong> button. ClipOwn automatically verifies the Instagram link format.</p>
+                    </div>
+
+                    <div class="step-arrow">
+                        <i data-lucide="chevron-right"></i>
+                    </div>
+
+                    <div class="step-card glass-panel">
+                        <div class="step-number">03</div>
+                        <div class="step-icon">
+                            <i data-lucide="download-cloud"></i>
+                        </div>
+                        <h3>Download in HD</h3>
+                        <p>Hit <strong>"Download"</strong>, preview your media details, choose 1080p or MP3, and save directly to your storage.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ Section -->
+        <section id="faq" class="section-padding">
+            <div class="container">
+                <div class="section-header text-center">
+                    <span class="sub-heading">Got Questions?</span>
+                    <h2 class="section-title">Frequently Asked Questions</h2>
+                    <p class="section-subtitle">Everything you need to know about using ClipOwn.</p>
+                </div>
+
+                <div class="faq-container">
+                    <div class="faq-item glass-panel">
+                        <button class="faq-question" type="button">
+                            <span>Is ClipOwn completely free to use?</span>
+                            <i data-lucide="chevron-down" class="faq-icon"></i>
+                        </button>
+                        <div class="faq-answer">
+                            <p>Yes, ClipOwn is 100% free with unlimited downloads. There are no subscriptions, hidden fees, or daily download limits.</p>
+                        </div>
+                    </div>
+
+                    <div class="faq-item glass-panel">
+                        <button class="faq-question" type="button">
+                            <span>Do I need to sign in with my Instagram account?</span>
+                            <i data-lucide="chevron-down" class="faq-icon"></i>
+                        </button>
+                        <div class="faq-answer">
+                            <p>No! You never need to enter your Instagram login credentials, passwords, or personal details. Simply paste public video links to download safely.</p>
+                        </div>
+                    </div>
+
+                    <div class="faq-item glass-panel">
+                        <button class="faq-question" type="button">
+                            <span>Where are the downloaded Instagram videos saved?</span>
+                            <i data-lucide="chevron-down" class="faq-icon"></i>
+                        </button>
+                        <div class="faq-answer">
+                            <p>On PC and Mac, videos are saved directly to your default <strong>"Downloads"</strong> folder. On iOS (iPhone/iPad), they are saved to your Files or Photos app, and on Android to your Gallery / Download directory.</p>
+                        </div>
+                    </div>
+
+                    <div class="faq-item glass-panel">
+                        <button class="faq-question" type="button">
+                            <span>Can I download private Instagram posts?</span>
+                            <i data-lucide="chevron-down" class="faq-icon"></i>
+                        </button>
+                        <div class="faq-answer">
+                            <p>To respect privacy standards and security protocols, ClipOwn currently only extracts media from public Instagram accounts and posts.</p>
+                        </div>
+                    </div>
+
+                    <div class="faq-item glass-panel">
+                        <button class="faq-question" type="button">
+                            <span>What video quality will I receive?</span>
+                            <i data-lucide="chevron-down" class="faq-icon"></i>
+                        </button>
+                        <div class="faq-answer">
+                            <p>ClipOwn fetches the highest resolution stream available on Instagram servers, up to 1080p Full HD at 60 FPS in standard MP4 format.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Site Footer -->
+    <footer class="site-footer">
+        <div class="container footer-content">
+            <div class="footer-top-grid">
+                <!-- Brand Column -->
+                <div class="footer-brand">
+                    <a href="/" class="logo">
+                        <div class="logo-brand-wrap">
+                            <img src="/static/images/logo_icon.png" alt="ClipOwn Logo" class="brand-logo-img">
+                        </div>
+                        <span class="logo-text">Clip<span class="gradient-text">Own</span></span>
+                    </a>
+                    <p class="footer-desc">The modern, private, and high-speed Instagram video downloader for creators, researchers, and media enthusiasts.</p>
+                    <div class="footer-pill">
+                        <span class="status-dot"></span> High-Speed HD Video & Audio Stream
+                    </div>
+                </div>
+
+                <!-- Navigation Column -->
+                <div class="footer-col">
+                    <h4 class="footer-col-title">Quick Links</h4>
+                    <ul class="footer-links-list">
+                        <li><a href="#downloader"><i data-lucide="download"></i> Downloader</a></li>
+                        <li><a href="#features"><i data-lucide="sparkles"></i> Features</a></li>
+                        <li><a href="#how-it-works"><i data-lucide="help-circle"></i> How It Works</a></li>
+                        <li><a href="#faq"><i data-lucide="message-circle-question"></i> FAQ</a></li>
+                        <li><a href="javascript:void(0)" id="openPrivacyBtn"><i data-lucide="shield-check"></i> Privacy Policy</a></li>
+                        <li><a href="javascript:void(0)" id="openTermsBtn"><i data-lucide="file-text"></i> Terms of Service</a></li>
+                    </ul>
+                </div>
+
+                <!-- Developer & Contact Column -->
+                <div class="footer-col footer-contact-col">
+                    <h4 class="footer-col-title">Developer & Contact</h4>
+                    <div class="contact-card glass-panel">
+                        <div class="contact-item">
+                            <div class="contact-icon-wrap">
+                                <i data-lucide="user-check"></i>
+                            </div>
+                            <div class="contact-text-group">
+                                <span class="contact-label">Lead Developer</span>
+                                <span class="contact-value highlight">Aravind kumar k</span>
+                            </div>
+                        </div>
+
+                        <div class="contact-item">
+                            <div class="contact-icon-wrap icon-location">
+                                <i data-lucide="map-pin"></i>
+                            </div>
+                            <div class="contact-text-group">
+                                <span class="contact-label">Location</span>
+                                <span class="contact-value">Tiruppur, Tamil Nadu, India</span>
+                            </div>
+                        </div>
+
+                        <a href="mailto:aravindvjm2004@gmail.com" class="contact-item contact-link" title="Send email">
+                            <div class="contact-icon-wrap icon-email">
+                                <i data-lucide="mail"></i>
+                            </div>
+                            <div class="contact-text-group">
+                                <span class="contact-label">Email Support</span>
+                                <span class="contact-value">aravindvjm2004@gmail.com</span>
+                            </div>
+                        </a>
+
+                        <a href="tel:8807006909" class="contact-item contact-link" title="Call directly">
+                            <div class="contact-icon-wrap icon-phone">
+                                <i data-lucide="phone"></i>
+                            </div>
+                            <div class="contact-text-group">
+                                <span class="contact-label">Contact Number</span>
+                                <span class="contact-value">+91 8807006909</span>
+                            </div>
+                        </a>
+
+                        <!-- Social Profiles Row -->
+                        <div class="contact-social-row">
+                            <a href="https://github.com/Aravind0511" target="_blank" rel="noopener noreferrer" class="btn-social btn-github" title="GitHub - Aravind0511">
+                                <i data-lucide="github"></i>
+                                <span>GitHub</span>
+                            </a>
+                            <a href="https://www.linkedin.com/in/aravind-k0504/" target="_blank" rel="noopener noreferrer" class="btn-social btn-linkedin" title="LinkedIn - Aravind K">
+                                <i data-lucide="linkedin"></i>
+                                <span>LinkedIn</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="footer-disclaimer">
+                <p><strong>Disclaimer:</strong> ClipOwn is an independent utility and is not affiliated, endorsed, or partnered with Instagram, Meta Platforms, Inc., or any of their subsidiaries. All trademarks and media copyrights belong to their respective creators.</p>
+                <div class="footer-bottom-bar">
+                    <p class="copyright">© 2026 ClipOwn. All rights reserved.</p>
+                    <div class="footer-legal-links">
+                        <button type="button" class="legal-link" id="legalPrivacyBtn">Privacy Policy</button>
+                        <span class="legal-sep">•</span>
+                        <button type="button" class="legal-link" id="legalTermsBtn">Terms of Service</button>
+                    </div>
+                    <p class="developer-credit">Designed & Developed by <strong>Aravind kumar k</strong></p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Privacy Policy & Terms Modal -->
+    <div id="privacyTermsModal" class="modal-backdrop hidden">
+        <div class="modal-card glass-panel modal-lg">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap icon-privacy-wrap">
+                        <i data-lucide="shield-check"></i>
+                    </div>
+                    <div>
+                        <h3 class="modal-title" id="policyModalTitle">Privacy & Terms</h3>
+                        <p class="modal-subtitle">Zero data tracking & fair-use downloading guidelines</p>
+                    </div>
+                </div>
+                <button type="button" id="closePolicyBtn" class="btn-close-modal" title="Close modal">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+
+            <!-- Tab Switcher -->
+            <div class="modal-tab-bar">
+                <button type="button" class="modal-tab active" id="tabPrivacyBtn">
+                    <i data-lucide="shield"></i> Privacy Policy (Zero Tracking)
+                </button>
+                <button type="button" class="modal-tab" id="tabTermsBtn">
+                    <i data-lucide="scale"></i> Terms & Fair Use
+                </button>
+            </div>
+
+            <div class="modal-body policy-body">
+                <!-- Privacy Tab Content -->
+                <div id="privacyTabContent" class="tab-pane active">
+                    <div class="policy-highlight-box">
+                        <div class="highlight-icon"><i data-lucide="lock"></i></div>
+                        <div class="highlight-text">
+                            <h4>100% Anonymous & Zero Data Logging</h4>
+                            <p>ClipOwn does not require user registration, does not track your IP address, and never stores the Instagram media or links you download.</p>
+                        </div>
+                    </div>
+
+                    <div class="policy-section">
+                        <h5>1. No User Data Collection</h5>
+                        <p>We do not collect personal identifying information such as names, phone numbers, or passwords. Any optional session cookies provided are stored strictly locally in your browser's <code>localStorage</code> and are never transmitted to third parties.</p>
+                    </div>
+
+                    <div class="policy-section">
+                        <h5>2. No Server-Side Media Storage</h5>
+                        <p>Downloaded videos and audio tracks are streamed directly in real-time from content delivery networks to your browser with <code>attachment</code> streaming. Our servers do not retain, cache, or archive any media files after transmission.</p>
+                    </div>
+
+                    <div class="policy-section">
+                        <h5>3. No Tracking Cookies or Third-Party Ads</h5>
+                        <p>ClipOwn does not use tracking pixels, cross-site analytics, or invasive advertising networks. Your downloading activity remains private and confidential.</p>
+                    </div>
+                </div>
+
+                <!-- Terms Tab Content -->
+                <div id="termsTabContent" class="tab-pane hidden">
+                    <div class="policy-highlight-box terms-highlight">
+                        <div class="highlight-icon"><i data-lucide="alert-triangle"></i></div>
+                        <div class="highlight-text">
+                            <h4>Fair Use & Intellectual Property</h4>
+                            <p>ClipOwn is intended strictly for personal, educational, and backup fair-use purposes. Please respect content creators' intellectual property rights.</p>
+                        </div>
+                    </div>
+
+                    <div class="policy-section">
+                        <h5>1. Personal & Non-Commercial Use</h5>
+                        <p>You agree to use ClipOwn only to download media for personal offline viewing, educational research, or archival purposes. You may not sell, redistribute, or commercially exploit downloaded media without permission from the original copyright holder.</p>
+                    </div>
+
+                    <div class="policy-section">
+                        <h5>2. Copyright & Intellectual Property</h5>
+                        <p>All trademarks, logos, audio tracks, and video copyrights belong to their respective owners and creators. ClipOwn does not host or claim ownership of any downloaded content.</p>
+                    </div>
+
+                    <div class="policy-section">
+                        <h5>3. Disclaimer of Affiliation</h5>
+                        <p>ClipOwn is an independent utility and is not affiliated, endorsed, certified, or sponsored by Instagram, Meta Platforms, Inc., or any of their affiliates.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <span class="policy-last-updated">Last Updated: September 2026</span>
+                <button type="button" id="agreePolicyBtn" class="btn-primary-sm">
+                    <i data-lucide="check"></i> Understood & Accept
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings & Cookies Modal -->
+    <div id="settingsModal" class="modal-backdrop hidden">
+        <div class="modal-card glass-panel">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <div class="modal-icon-wrap">
+                        <i data-lucide="shield-alert"></i>
+                    </div>
+                    <div>
+                        <h3 class="modal-title">Downloader Settings</h3>
+                        <p class="modal-subtitle">Configure optional session authentication</p>
+                    </div>
+                </div>
+                <button type="button" id="closeSettingsBtn" class="btn-close-modal">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+
+            <div class="modal-body">
+                <div class="info-alert">
+                    <i data-lucide="info"></i>
+                    <p>Instagram limits media downloads when requests are sent without user authentication. Adding your Instagram <code>sessionid</code> cookie lets you extract Reels, Posts, and Stories seamlessly.</p>
+                </div>
+
+                <div class="form-group">
+                    <label for="cookieInput" class="form-label">Instagram Session Cookie (or <code>sessionid=...</code>)</label>
+                    <textarea 
+                        id="cookieInput" 
+                        class="form-textarea" 
+                        rows="3" 
+                        placeholder="sessionid=123456789%3Aabc... or full cookie string"
+                    ></textarea>
+                </div>
+
+                <div class="cookie-guide">
+                    <h4>How to get your sessionid:</h4>
+                    <ol>
+                        <li>Log in to <a href="https://www.instagram.com" target="_blank" rel="noreferrer">Instagram.com</a> in your browser.</li>
+                        <li>Press <kbd>F12</kbd> (or right click > Inspect) and go to <strong>Application</strong> > <strong>Cookies</strong>.</li>
+                        <li>Find and copy the value of <strong><code>sessionid</code></strong>.</li>
+                        <li>Paste it here and click Save.</li>
+                    </ol>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" id="clearCookieBtn" class="btn-ghost-danger">
+                    <i data-lucide="trash-2"></i> Clear Cookie
+                </button>
+                <div class="modal-footer-right">
+                    <button type="button" id="cancelSettingsBtn" class="btn-ghost">Cancel</button>
+                    <button type="button" id="saveCookieBtn" class="btn-primary-sm">
+                        <i data-lucide="save"></i> Save Settings
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Script -->
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
