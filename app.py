@@ -57,12 +57,30 @@ async def read_root():
     return HTMLResponse(content=content)
 
 @app.get("/api/fetch-info")
-async def fetch_info(url: str = Query(..., description="Instagram Reel, Video, or Post URL")):
+async def fetch_info(
+    request: Request,
+    url: str = Query(..., description="Instagram Reel, Video, or Post URL"),
+    cookie: str = Query(None, description="Optional Instagram session cookie")
+):
     """
     Fetch media information and available download streams for the given Instagram URL.
+    Supports client-provided cookies for persistent authentication across container restarts.
     """
+    global ACTIVE_COOKIE
     clean_url = url.strip()
     
+    # Check client cookie or header or ACTIVE_COOKIE
+    req_cookie = cookie or request.headers.get("X-IG-Cookie") or ACTIVE_COOKIE
+    if req_cookie and req_cookie.strip():
+        if not ACTIVE_COOKIE or ACTIVE_COOKIE != req_cookie.strip():
+            ACTIVE_COOKIE = req_cookie.strip()
+            try:
+                netscape_data = convert_to_netscape_content(ACTIVE_COOKIE)
+                with open(COOKIE_FILE_PATH, "w", encoding="utf-8") as f:
+                    f.write(netscape_data)
+            except Exception:
+                pass
+
     # Basic Instagram URL validation
     ig_pattern = r"(?:https?:\/\/)?(?:www\.)?(?:instagram\.com)\/(?:p|reel|tv|stories)\/([A-Za-z0-9_-]+)"
     if not re.search(ig_pattern, clean_url) and "instagram.com" not in clean_url:
@@ -75,7 +93,7 @@ async def fetch_info(url: str = Query(..., description="Instagram Reel, Video, o
         )
 
     # Call extractor
-    result = extract_instagram_media(clean_url, cookie_string=ACTIVE_COOKIE)
+    result = extract_instagram_media(clean_url, cookie_string=req_cookie or ACTIVE_COOKIE)
     return JSONResponse(content=result)
 
 @app.api_route("/api/download", methods=["GET", "HEAD"])

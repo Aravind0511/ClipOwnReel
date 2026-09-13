@@ -89,10 +89,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // Current fetched media object
     let currentMedia = null;
 
-    // Load saved cookie preference
+    // Load saved cookie preference & auto-sync to backend
     const savedCookie = localStorage.getItem('clipown_ig_cookie');
-    if (savedCookie && cookieInput) {
-        cookieInput.value = savedCookie;
+    if (savedCookie) {
+        if (cookieInput) cookieInput.value = savedCookie;
+        fetch(getEndpointUrl('/api/settings/cookie'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cookie: savedCookie })
+        }).catch(() => {});
     }
 
     // --------------------------------------------------------------------------
@@ -228,13 +233,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const apiBase = window.location.hostname.includes('github.io') 
                 ? (localStorage.getItem('clipown_backend_url') || '') 
                 : '';
-            const apiUrl = apiBase 
+            const clientCookie = localStorage.getItem('clipown_ig_cookie') || '';
+            let apiUrl = apiBase 
                 ? `${apiBase.replace(/\/$/, '')}/api/fetch-info?url=${encodeURIComponent(url)}` 
                 : `/api/fetch-info?url=${encodeURIComponent(url)}`;
+            if (clientCookie) {
+                apiUrl += `&cookie=${encodeURIComponent(clientCookie)}`;
+            }
             
             let mediaData = null;
             try {
-                const response = await fetch(apiUrl);
+                const response = await fetch(apiUrl, {
+                    headers: clientCookie ? { 'X-IG-Cookie': clientCookie } : {}
+                });
                 if (response.ok) {
                     mediaData = await response.json();
                 }
