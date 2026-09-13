@@ -190,9 +190,15 @@ async def download_media(
         raise HTTPException(status_code=500, detail=f"Failed to stream media: {str(e)}")
 
 @app.get("/api/stream")
-async def stream_media_for_preview(request: Request, url: str = Query(..., description="Direct media URL to stream")):
+async def stream_media_for_preview(
+    request: Request,
+    url: str = Query(..., description="Direct media URL to stream"),
+    audio_url: str = Query(None, description="Optional audio stream URL to mux for synchronized preview sound")
+):
     """
     Proxy video streams with Range request support for smooth browser video preview & scrubbing.
+    If audio_url is provided, automatically muxes video + audio into a synchronized preview MP4
+    so the browser HTML5 player and trimmer audition with authentic sound.
     """
     clean_url = url.strip()
     if not clean_url or clean_url == "#":
@@ -200,6 +206,29 @@ async def stream_media_for_preview(request: Request, url: str = Query(..., descr
 
     if os.path.exists(clean_url):
         return FileResponse(clean_url, media_type="video/mp4", headers={"Access-Control-Allow-Origin": "*"})
+
+    # Check if audio stream should be muxed for synchronized preview sound
+    clean_audio = audio_url.strip() if (audio_url and audio_url.strip() and audio_url.strip().lower() not in ["none", "null", "undefined", clean_url.lower()]) else None
+    
+    if clean_audio:
+        import hashlib, shutil, tempfile
+        cache_key = hashlib.md5((clean_url + clean_audio).encode()).hexdigest()[:16]
+        temp_dir = tempfile.gettempdir()
+        cached_preview = os.path.join(temp_dir, f"clipown_prev_{cache_key}.mp4")
+        
+        if os.path.exists(cached_preview) and os.path.getsize(cached_preview) > 1000:
+            return FileResponse(cached_preview, media_type="video/mp4", headers={"Access-Control-Allow-Origin": "*"})
+            
+        try:
+            muxed_file = mux_video_audio(clean_url, clean_audio)
+            if os.path.exists(muxed_file) and os.path.getsize(muxed_file) > 1000:
+                try:
+                    shutil.move(muxed_file, cached_preview)
+                except Exception:
+                    cached_preview = muxed_file
+                return FileResponse(cached_preview, media_type="video/mp4", headers={"Access-Control-Allow-Origin": "*"})
+        except Exception as e:
+            print(f"Preview mux failed, falling back to direct stream: {e}")
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
