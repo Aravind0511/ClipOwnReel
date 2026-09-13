@@ -324,8 +324,14 @@ async def system_diag():
                 'format_note': f.get('format_note'),
                 'url_snippet': f.get('url', '').split('?')[0][-25:] if f.get('url') else None
             } for f in info.get('formats', [])]
+            raw_manifest = info.get('video_dash_manifest') or ''
+            has_audio_in_manifest = 'audio' in raw_manifest.lower()
+            manifest_len = len(raw_manifest)
     except Exception as e:
         formats_summary = f"Error: {str(e)}"
+        raw_manifest = ''
+        has_audio_in_manifest = False
+        manifest_len = 0
 
     return {
         "os": os.name,
@@ -334,6 +340,9 @@ async def system_diag():
         "raw_exe": raw_exe,
         "raw_exe_exists": os.path.exists(raw_exe),
         "ffmpeg_version": ffmpeg_ver,
+        "manifest_len": manifest_len,
+        "has_audio_in_manifest": has_audio_in_manifest,
+        "manifest_snippet": raw_manifest[:300] if raw_manifest else None,
         "formats_count": len(formats_summary) if isinstance(formats_summary, list) else 0,
         "formats": formats_summary
     }
