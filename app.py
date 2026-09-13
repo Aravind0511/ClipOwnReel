@@ -299,6 +299,45 @@ async def health_check():
     """Health check endpoint."""
     return {"status": "ok", "service": "ClipOwn Downloader"}
 
+@app.get("/api/system-diag")
+async def system_diag():
+    """Diagnostic endpoint to inspect FFmpeg and yt-dlp formats."""
+    import subprocess, yt_dlp, imageio_ffmpeg
+    exe = ensure_ffmpeg()
+    raw_exe = imageio_ffmpeg.get_ffmpeg_exe()
+    
+    try:
+        ver_res = subprocess.run([exe, "-version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5)
+        ffmpeg_ver = ver_res.stdout.splitlines()[0] if ver_res.returncode == 0 else f"Error: {ver_res.stderr}"
+    except Exception as e:
+        ffmpeg_ver = f"Exception: {str(e)}"
+
+    try:
+        ydl_opts = {'quiet': True, 'skip_download': True, 'no_warnings': True}
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info("https://www.instagram.com/reel/Dcp3JkzJTA6/", download=False)
+            formats_summary = [{
+                'id': f.get('format_id'),
+                'ext': f.get('ext'),
+                'vcodec': f.get('vcodec'),
+                'acodec': f.get('acodec'),
+                'format_note': f.get('format_note'),
+                'url_snippet': f.get('url', '').split('?')[0][-25:] if f.get('url') else None
+            } for f in info.get('formats', [])]
+    except Exception as e:
+        formats_summary = f"Error: {str(e)}"
+
+    return {
+        "os": os.name,
+        "ffmpeg_bin": exe,
+        "ffmpeg_exists": os.path.exists(exe),
+        "raw_exe": raw_exe,
+        "raw_exe_exists": os.path.exists(raw_exe),
+        "ffmpeg_version": ffmpeg_ver,
+        "formats_count": len(formats_summary) if isinstance(formats_summary, list) else 0,
+        "formats": formats_summary
+    }
+
 if __name__ == "__main__":
     import uvicorn
     print("Starting ClipOwn server at http://127.0.0.1:8000 ...")

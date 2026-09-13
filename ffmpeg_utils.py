@@ -31,15 +31,21 @@ def ensure_ffmpeg() -> str:
     if os.path.exists(raw_exe) and not os.path.exists(target_path):
         try:
             shutil.copy2(raw_exe, target_path)
-            if os.name != "nt":
-                os.chmod(target_path, 0o755)
         except Exception:
             pass
             
+    if os.name != "nt":
+        for p in [raw_exe, target_path]:
+            if p and os.path.exists(p):
+                try:
+                    os.chmod(p, 0o755)
+                except Exception:
+                    pass
+
     if bin_dir not in os.environ.get("PATH", ""):
         os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
         
-    final_bin = target_path if os.path.exists(target_path) else raw_exe
+    final_bin = target_path if (os.path.exists(target_path) and os.access(target_path, os.X_OK)) else raw_exe
     os.environ["FFMPEG_BINARY"] = final_bin
     return final_bin
 
