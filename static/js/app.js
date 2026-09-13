@@ -363,7 +363,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btnDownloadAudio.addEventListener('click', () => {
         if (!currentMedia) return;
         showToast('Initiating MP3 Audio download (converting with FFmpeg)...', 'success');
-        const audioSrc = currentMedia.download_url_audio || currentMedia.separate_audio_url || currentMedia.download_url_hd || currentMedia.direct_link;
+        const audioSrc = currentMedia.download_url_audio || currentMedia.preview_url || currentMedia.download_url_sd || currentMedia.separate_audio_url || currentMedia.direct_link;
         const downloadPath = `/api/download?url=${encodeURIComponent(audioSrc)}&filename=clipown_audio_${currentMedia.shortcode || 'audio'}.mp3&media_type=audio`;
         triggerBrowserDownload(getEndpointUrl(downloadPath));
     });
@@ -437,9 +437,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         updateTrimUI();
 
-        // Setup preview video stream
+        // Setup preview video stream (use stream with guaranteed sound)
         if (previewVideo) {
-            const streamSrc = `/api/stream?url=${encodeURIComponent(data.download_url_hd || data.download_url_sd || data.direct_link)}`;
+            const streamUrl = data.preview_url || data.download_url_sd || data.download_url_hd || data.direct_link;
+            const streamSrc = getEndpointUrl(`/api/stream?url=${encodeURIComponent(streamUrl)}`);
             previewVideo.src = streamSrc;
             previewVideo.load();
             previewVideo.classList.add('hidden');
@@ -659,8 +660,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const end = parseFloat(trimEndRange.value) || 0;
         const isVideo = (mediaType === 'video');
         const sourceUrl = isVideo 
-            ? (currentMedia.download_url_hd || currentMedia.direct_link) 
-            : (currentMedia.download_url_audio || currentMedia.download_url_hd || currentMedia.direct_link);
+            ? (currentMedia.preview_url || currentMedia.download_url_sd || currentMedia.download_url_hd || currentMedia.direct_link) 
+            : (currentMedia.download_url_audio || currentMedia.preview_url || currentMedia.download_url_sd || currentMedia.separate_audio_url || currentMedia.direct_link);
 
         const btn = isVideo ? btnDownloadTrimmedVideo : btnDownloadTrimmedAudio;
         const loader = isVideo ? trimVideoLoader : trimAudioLoader;

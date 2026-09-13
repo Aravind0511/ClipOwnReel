@@ -52,7 +52,6 @@ def download_stream_chunked(url: str, ext: str = "mp4") -> str:
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-        "Referer": "https://www.instagram.com/",
         "Accept": "*/*",
     }
     
@@ -78,7 +77,7 @@ def mux_video_audio(video_url: str, audio_url: str) -> str:
     temp_dir = tempfile.gettempdir()
     out_file = os.path.join(temp_dir, f"clipown_mux_{uuid.uuid4().hex[:10]}.mp4")
     
-    headers = "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36\r\nReferer: https://www.instagram.com/\r\n"
+    headers = "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36\r\n"
     
     # Try direct URL mux first (fastest, stream copy)
     cmd = [
@@ -88,6 +87,8 @@ def mux_video_audio(video_url: str, audio_url: str) -> str:
         "-i", video_url,
         "-headers", headers,
         "-i", audio_url,
+        "-map", "0:v:0",
+        "-map", "1:a:0",
         "-c:v", "copy",
         "-c:a", "aac",
         "-movflags", "+faststart",
@@ -109,6 +110,8 @@ def mux_video_audio(video_url: str, audio_url: str) -> str:
             "-y",
             "-i", temp_v,
             "-i", temp_a,
+            "-map", "0:v:0",
+            "-map", "1:a:0",
             "-c:v", "copy",
             "-c:a", "aac",
             "-movflags", "+faststart",
@@ -138,7 +141,7 @@ def extract_mp3_audio(source_url: str) -> str:
     temp_dir = tempfile.gettempdir()
     out_file = os.path.join(temp_dir, f"clipown_audio_{uuid.uuid4().hex[:10]}.mp3")
     
-    headers = "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36\r\nReferer: https://www.instagram.com/\r\n"
+    headers = "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36\r\n"
     
     # Try direct URL conversion first
     cmd = [

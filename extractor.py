@@ -81,7 +81,7 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
             
             formats = info.get('formats', [])
             
-            # 1. Filter dedicated audio streams
+            # 1. Dedicated audio streams
             audio_formats = [
                 f for f in formats
                 if f.get('url') and (
@@ -89,22 +89,32 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
                     or (f.get('vcodec') == 'none' and f.get('acodec') and f.get('acodec') != 'none')
                 )
             ]
-            best_audio_url = audio_formats[0]['url'] if audio_formats else None
             
-            # 2. Filter true progressive streams (which bundle video + audio in one file)
+            # 2. Progressive streams (Format 1, 2, 3 or formats bundling video + audio)
             progressive_formats = [
                 f for f in formats
                 if f.get('url') and (
-                    'progressive' in f.get('url', '').lower()
-                    or str(f.get('format_id', '')) in ['1', '2', '3']
+                    str(f.get('format_id', '')) in ['1', '2', '3']
+                    or 'progressive' in f.get('url', '').lower()
                     or (
                         f.get('vcodec') and f.get('vcodec') != 'none'
                         and f.get('acodec') and f.get('acodec') != 'none'
                     )
                 )
             ]
+            default_url = info.get('url')
+
+            # Determine best audio URL (must contain audio track!)
+            if audio_formats:
+                best_audio_url = audio_formats[0]['url']
+            elif progressive_formats:
+                best_audio_url = progressive_formats[-1]['url']
+            elif default_url:
+                best_audio_url = default_url
+            else:
+                best_audio_url = None
             
-            # 3. Filter DASH video-only streams (highest quality e.g. 1080p, requires audio mux)
+            # 3. DASH video-only streams (e.g. 1080p, requires audio mux)
             dash_video_formats = [
                 f for f in formats
                 if f.get('url') and (
@@ -115,39 +125,40 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
             if dash_video_formats:
                 dash_video_formats.sort(key=lambda x: (x.get('height') or 0, x.get('tbr') or 0))
 
-            # Highest quality video format
-            best_dash = dash_video_formats[-1] if dash_video_formats else None
-            best_prog = progressive_formats[-1] if progressive_formats else None
-
-            # Determine HD video stream
-            if best_dash and (not best_prog or (best_dash.get('height') or 0) > (best_prog.get('height') or 0)):
-                video_hd = best_dash['url']
-                separate_audio_url = best_audio_url
-                hd_height = best_dash.get('height') or 1080
-                hd_width = best_dash.get('width') or 1920
-            elif best_prog:
-                video_hd = best_prog['url']
-                separate_audio_url = None
-                hd_height = best_prog.get('height') or 720
-                hd_width = best_prog.get('width') or 1280
-            else:
-                video_hd = info.get('url')
-                separate_audio_url = best_audio_url
-                hd_height = info.get('height') or 1080
-                hd_width = info.get('width') or 1920
-
-            # Determine SD video stream
+            # Determine Progressive SD stream (guaranteed to contain audio & video in standard H.264)
             if progressive_formats:
-                video_sd = progressive_formats[0]['url']
-                sd_audio_url = None
+                video_sd = progressive_formats[-1]['url']
+            elif default_url:
+                video_sd = default_url
             elif dash_video_formats:
                 video_sd = dash_video_formats[0]['url']
-                sd_audio_url = best_audio_url
             else:
-                video_sd = video_hd
-                sd_audio_url = separate_audio_url
+                video_sd = None
 
-            audio_url = best_audio_url or video_hd
+            # Determine HD video stream
+            if dash_video_formats:
+                best_dash = dash_video_formats[-1]
+                video_hd = best_dash['url']
+                hd_height = best_dash.get('height') or 1080
+                hd_width = best_dash.get('width') or 1920
+                separate_audio_url = best_audio_url
+            elif progressive_formats:
+                video_hd = progressive_formats[-1]['url']
+                hd_height = progressive_formats[-1].get('height') or 720
+                hd_width = progressive_formats[-1].get('width') or 1280
+                separate_audio_url = None
+            else:
+                video_hd = default_url
+                hd_height = info.get('height') or 1080
+                hd_width = info.get('width') or 1920
+                separate_audio_url = None
+
+            if not video_sd:
+                video_sd = video_hd
+
+            # Preview Stream: MUST ALWAYS CONTAIN SOUND for web player and trimmer audition!
+            preview_url = video_sd if video_sd else video_hd
+            audio_url = best_audio_url if best_audio_url else preview_url
 
             if not video_hd:
                 return {
@@ -181,7 +192,8 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
                 "download_url_sd": video_sd,
                 "download_url_audio": audio_url,
                 "separate_audio_url": separate_audio_url,
-                "sd_audio_url": sd_audio_url,
+                "sd_audio_url": None,
+                "preview_url": preview_url,
                 "direct_link": normalized_url,
                 "source": "instagram_live"
             }
