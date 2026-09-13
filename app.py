@@ -6,11 +6,12 @@ Backend Server (FastAPI)
 import os
 import re
 import requests
-from fastapi import FastAPI, Query, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi import FastAPI, Query, HTTPException, Request, Response, BackgroundTasks
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from extractor import extract_instagram_media, COOKIE_FILE_PATH
+from trimmer import trim_media
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
@@ -34,7 +35,9 @@ class CookiePayload(BaseModel):
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     """Serve the modern single-page web app."""
-    index_file = os.path.join(TEMPLATES_DIR, "index.html")
+    index_file = os.path.join(BASE_DIR, "index.html")
+    if not os.path.exists(index_file):
+        index_file = os.path.join(TEMPLATES_DIR, "index.html")
     if not os.path.exists(index_file):
         raise HTTPException(status_code=404, detail="Index template not found")
     with open(index_file, "r", encoding="utf-8") as f:
@@ -113,6 +116,108 @@ async def download_media(url: str = Query(..., description="Direct media URL to 
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to stream media: {str(e)}")
+
+@app.get("/api/stream")
+async def stream_media_for_preview(request: Request, url: str = Query(..., description="Direct media URL to stream")):
+    """
+    Proxy video streams with Range request support for smooth browser video preview & scrubbing.
+    """
+    clean_url = url.strip()
+    if not clean_url or clean_url == "#":
+        raise HTTPException(status_code=400, detail="Invalid media URL.")
+
+    if os.path.exists(clean_url):
+        return FileResponse(clean_url, media_type="video/mp4", headers={"Access-Control-Allow-Origin": "*"})
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        "Referer": "https://www.instagram.com/",
+        "Accept": "*/*",
+    }
+    
+    range_header = request.headers.get("Range")
+    if range_header:
+        headers["Range"] = range_header
+
+    try:
+        req = requests.get(clean_url, stream=True, timeout=25, headers=headers)
+        
+        response_headers = {
+            "Content-Type": req.headers.get("Content-Type", "video/mp4"),
+            "Accept-Ranges": "bytes",
+            "Access-Control-Allow-Origin": "*",
+        }
+        for h in ["Content-Range", "Content-Length"]:
+            if h in req.headers:
+                response_headers[h] = req.headers[h]
+
+        def iter_stream():
+            for chunk in req.iter_content(chunk_size=1024 * 64):
+                if chunk:
+                    yield chunk
+
+        return StreamingResponse(
+            iter_stream(),
+            status_code=req.status_code,
+            headers=response_headers,
+            media_type=response_headers["Content-Type"]
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Streaming error: {str(e)}")
+
+@app.get("/api/trim-download")
+async def trim_download_media(
+    background_tasks: BackgroundTasks,
+    url: str = Query(..., description="Media source URL to trim"),
+    start: float = Query(0.0, description="Start timestamp in seconds"),
+    end: float = Query(..., description="End timestamp in seconds"),
+    media_type: str = Query("video", description="Trim output format: video or audio"),
+    filename: str = Query("clipown_trimmed.mp4", description="Output filename")
+):
+    """
+    Trims video or audio using FFmpeg and streams the cut file directly to the client.
+    Guarantees synchronized audio + video for videos, or clean MP3 for audio.
+    Cleans up temporary file upon completion.
+    """
+    clean_url = url.strip()
+    if not clean_url or clean_url == "#":
+        raise HTTPException(status_code=400, detail="Invalid media URL.")
+
+    if start < 0 or end <= start:
+        raise HTTPException(status_code=400, detail="Invalid start/end trim timestamps. End must be greater than start.")
+
+    try:
+        trimmed_file = trim_media(
+            source_url=clean_url,
+            start_time=start,
+            end_time=end,
+            media_type=media_type
+        )
+
+        # File cleanup task after streaming
+        background_tasks.add_task(os.remove, trimmed_file)
+
+        # Content type & extension
+        is_video = (media_type.lower() == "video")
+        ext = ".mp4" if is_video else ".mp3"
+        content_type = "video/mp4" if is_video else "audio/mpeg"
+
+        # Safe output filename
+        safe_filename = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', filename)
+        if not safe_filename.endswith(ext):
+            safe_filename += ext
+
+        return FileResponse(
+            trimmed_file,
+            media_type=content_type,
+            filename=safe_filename,
+            headers={
+                "Content-Disposition": f'attachment; filename="{safe_filename}"',
+                "Access-Control-Allow-Origin": "*"
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Trim processing failed: {str(e)}")
 
 @app.post("/api/settings/cookie")
 async def save_cookie(payload: CookiePayload):

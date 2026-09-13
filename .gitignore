@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+cookies.txt
+*.mp4
+*.mp3
+.vscode/
+.idea/

@@ -61,6 +61,31 @@ document.addEventListener('DOMContentLoaded', () => {
     const legalPrivacyBtn = document.getElementById('legalPrivacyBtn');
     const legalTermsBtn = document.getElementById('legalTermsBtn');
 
+    // Video Player & Trimmer Elements
+    const previewVideo = document.getElementById('previewVideo');
+    const playOverlayBtn = document.getElementById('playOverlayBtn');
+    const trimToolSection = document.getElementById('trimToolSection');
+    const toggleTrimBtn = document.getElementById('toggleTrimBtn');
+    const trimControlsArea = document.getElementById('trimControlsArea');
+    const trimToggleLabel = document.getElementById('trimToggleLabel');
+    const trimChevronIcon = document.getElementById('trimChevronIcon');
+    const trimStartVal = document.getElementById('trimStartVal');
+    const trimEndVal = document.getElementById('trimEndVal');
+    const trimDurationVal = document.getElementById('trimDurationVal');
+    const trimStartRange = document.getElementById('trimStartRange');
+    const trimEndRange = document.getElementById('trimEndRange');
+    const timelineHighlight = document.getElementById('timelineHighlight');
+    const previewSegmentBtn = document.getElementById('previewSegmentBtn');
+    const previewSegmentIcon = document.getElementById('previewSegmentIcon');
+    const previewSegmentText = document.getElementById('previewSegmentText');
+    const btnDownloadTrimmedVideo = document.getElementById('btnDownloadTrimmedVideo');
+    const btnDownloadTrimmedAudio = document.getElementById('btnDownloadTrimmedAudio');
+    const trimVideoSubtext = document.getElementById('trimVideoSubtext');
+    const trimAudioSubtext = document.getElementById('trimAudioSubtext');
+    const trimVideoLoader = document.getElementById('trimVideoLoader');
+    const trimAudioLoader = document.getElementById('trimAudioLoader');
+    const presetChips = document.querySelectorAll('.preset-chip');
+
     // Current fetched media object
     let currentMedia = null;
 
@@ -200,15 +225,55 @@ document.addEventListener('DOMContentLoaded', () => {
         loadingState.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
         try {
-            const response = await fetch(`/api/fetch-info?url=${encodeURIComponent(url)}`);
-            const mediaData = await response.json();
+            const apiBase = window.location.hostname.includes('github.io') 
+                ? (localStorage.getItem('clipown_backend_url') || '') 
+                : '';
+            const apiUrl = apiBase 
+                ? `${apiBase.replace(/\/$/, '')}/api/fetch-info?url=${encodeURIComponent(url)}` 
+                : `/api/fetch-info?url=${encodeURIComponent(url)}`;
+            
+            let mediaData = null;
+            try {
+                const response = await fetch(apiUrl);
+                if (response.ok) {
+                    mediaData = await response.json();
+                }
+            } catch (netErr) {
+                console.warn('Backend fetch failed, checking demo fallback:', netErr);
+            }
 
-            if (!response.ok || !mediaData.success) {
-                throw new Error(mediaData.message || 'Failed to extract video.');
+            if (!mediaData || !mediaData.success) {
+                // If running on GitHub Pages (static host), fallback to interactive demo reel
+                if (window.location.hostname.includes('github.io')) {
+                    mediaData = {
+                        success: true,
+                        is_mock: true,
+                        shortcode: 'Dcp3JkzJTA6',
+                        title: 'ClipOwn Demo Reel • Instagram Video Downloader & Trimmer',
+                        author: 'aravind_k0504',
+                        author_avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+                        thumbnail: 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=800&auto=format&fit=crop&q=80',
+                        duration: '0:30',
+                        duration_seconds: 30.0,
+                        format: 'MP4 (H.264)',
+                        resolution: '1080 x 1920',
+                        size: '~ 18.5 MB',
+                        download_url_hd: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+                        download_url_sd: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+                        download_url_audio: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+                        direct_link: url,
+                        source: 'demo_preview'
+                    };
+                    showToast('GitHub Pages Demo Mode: Live preview active! Run locally with python app.py or deploy to Render for full Instagram downloads.', 'info', 6000);
+                } else {
+                    throw new Error((mediaData && mediaData.message) || 'Failed to extract video.');
+                }
             }
 
             renderMediaResult(mediaData);
-            showToast('Instagram media retrieved successfully!', 'success');
+            if (!mediaData.is_mock) {
+                showToast('Instagram media retrieved successfully!', 'success');
+            }
         } catch (err) {
             console.error('Error fetching media:', err);
             showToast(err.message || 'Failed to retrieve media. Please check link.', 'error');
@@ -254,6 +319,9 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (authNoticeBanner) {
             authNoticeBanner.classList.add('hidden');
         }
+
+        // Initialize Trimmer & Video Preview
+        initTrimmer(data);
 
         resultState.classList.remove('hidden');
         if (window.lucide) window.lucide.createIcons({ root: resultState });
@@ -308,12 +376,311 @@ document.addEventListener('DOMContentLoaded', () => {
         resultState.classList.add('hidden');
         videoUrlInput.value = '';
         toggleClearButton();
+        cleanupTrimmer();
         currentMedia = null;
         document.getElementById('downloader').scrollIntoView({ behavior: 'smooth' });
     }
 
     closeResultBtn.addEventListener('click', resetResult);
     downloadAnotherBtn.addEventListener('click', resetResult);
+
+    // --------------------------------------------------------------------------
+    // Video & Audio Trimmer Controller
+    // --------------------------------------------------------------------------
+    function formatSeconds(sec) {
+        if (isNaN(sec) || sec < 0) return '00:00';
+        const total = Math.floor(sec);
+        const m = Math.floor(total / 60);
+        const s = total % 60;
+        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+
+    function initTrimmer(data) {
+        if (!trimToolSection) return;
+        const duration = data.duration_seconds || 30.0;
+
+        if (trimStartRange && trimEndRange) {
+            trimStartRange.min = '0';
+            trimStartRange.max = duration.toString();
+            trimStartRange.step = '0.5';
+            trimStartRange.value = '0';
+
+            trimEndRange.min = '0';
+            trimEndRange.max = duration.toString();
+            trimEndRange.step = '0.5';
+            trimEndRange.value = duration.toString();
+        }
+
+        // Reset preset chips
+        presetChips.forEach(chip => {
+            if (chip.dataset.preset === 'full') {
+                chip.classList.add('active');
+            } else {
+                chip.classList.remove('active');
+            }
+        });
+
+        updateTrimUI();
+
+        // Setup preview video stream
+        if (previewVideo) {
+            const streamSrc = `/api/stream?url=${encodeURIComponent(data.download_url_hd || data.download_url_sd || data.direct_link)}`;
+            previewVideo.src = streamSrc;
+            previewVideo.load();
+            previewVideo.classList.add('hidden');
+        }
+        if (previewThumbnail) previewThumbnail.classList.remove('hidden');
+        if (playOverlayBtn) playOverlayBtn.classList.remove('hidden');
+
+        resetPreviewSegmentBtn();
+    }
+
+    function updateTrimUI() {
+        if (!trimStartRange || !trimEndRange) return;
+        let start = parseFloat(trimStartRange.value) || 0;
+        let end = parseFloat(trimEndRange.value) || 0;
+        const maxVal = parseFloat(trimStartRange.max) || 30;
+
+        if (start >= end - 0.5) {
+            start = Math.max(0, end - 0.5);
+            trimStartRange.value = start.toString();
+        }
+
+        const duration = Math.max(0.5, end - start);
+
+        if (trimStartVal) trimStartVal.textContent = formatSeconds(start);
+        if (trimEndVal) trimEndVal.textContent = formatSeconds(end);
+        if (trimDurationVal) trimDurationVal.textContent = formatSeconds(duration);
+
+        if (timelineHighlight) {
+            const leftPct = (start / maxVal) * 100;
+            const widthPct = (duration / maxVal) * 100;
+            timelineHighlight.style.left = `${leftPct}%`;
+            timelineHighlight.style.width = `${widthPct}%`;
+        }
+
+        const rangeStr = `${formatSeconds(start)} - ${formatSeconds(end)} (${Math.round(duration)}s)`;
+        if (trimVideoSubtext) {
+            trimVideoSubtext.innerHTML = `MP4 with Audio • <span class="range-preview-text">${rangeStr}</span>`;
+        }
+        if (trimAudioSubtext) {
+            trimAudioSubtext.innerHTML = `Audio Only • <span class="range-preview-text">${rangeStr}</span>`;
+        }
+    }
+
+    function cleanupTrimmer() {
+        if (previewVideo) {
+            previewVideo.pause();
+            previewVideo.removeAttribute('src');
+            previewVideo.load();
+            previewVideo.classList.add('hidden');
+        }
+        if (previewThumbnail) previewThumbnail.classList.remove('hidden');
+        if (playOverlayBtn) playOverlayBtn.classList.remove('hidden');
+        resetPreviewSegmentBtn();
+    }
+
+    function clearActivePresets() {
+        presetChips.forEach(c => c.classList.remove('active'));
+    }
+
+    function syncVideoTime(sec) {
+        if (previewVideo && isFinite(sec)) {
+            if (!previewVideo.paused) {
+                previewVideo.pause();
+                resetPreviewSegmentBtn();
+            }
+            previewVideo.currentTime = sec;
+        }
+    }
+
+    // Toggle Trimmer Section
+    if (toggleTrimBtn) {
+        toggleTrimBtn.addEventListener('click', () => {
+            const isCollapsed = trimControlsArea.classList.toggle('collapsed');
+            if (trimToggleLabel) {
+                trimToggleLabel.textContent = isCollapsed ? 'Expand' : 'Collapse';
+            }
+            if (trimChevronIcon) {
+                trimChevronIcon.setAttribute('data-lucide', isCollapsed ? 'chevron-down' : 'chevron-up');
+                if (window.lucide) window.lucide.createIcons({ root: toggleTrimBtn });
+            }
+        });
+    }
+
+    // Sliders input handling
+    if (trimStartRange) {
+        trimStartRange.addEventListener('input', () => {
+            const start = parseFloat(trimStartRange.value);
+            const end = parseFloat(trimEndRange.value);
+            if (start >= end - 0.5) {
+                trimStartRange.value = (end - 0.5).toString();
+            }
+            clearActivePresets();
+            updateTrimUI();
+            syncVideoTime(parseFloat(trimStartRange.value));
+        });
+    }
+
+    if (trimEndRange) {
+        trimEndRange.addEventListener('input', () => {
+            const start = parseFloat(trimStartRange.value);
+            const end = parseFloat(trimEndRange.value);
+            if (end <= start + 0.5) {
+                trimEndRange.value = (start + 0.5).toString();
+            }
+            clearActivePresets();
+            updateTrimUI();
+            syncVideoTime(parseFloat(trimEndRange.value));
+        });
+    }
+
+    // Presets
+    presetChips.forEach(chip => {
+        chip.addEventListener('click', () => {
+            if (!currentMedia) return;
+            const total = currentMedia.duration_seconds || 30.0;
+            const preset = chip.dataset.preset;
+
+            clearActivePresets();
+            chip.classList.add('active');
+
+            if (preset === 'full') {
+                trimStartRange.value = '0';
+                trimEndRange.value = total.toString();
+            } else if (preset === 'first15') {
+                trimStartRange.value = '0';
+                trimEndRange.value = Math.min(15, total).toString();
+            } else if (preset === 'first30') {
+                trimStartRange.value = '0';
+                trimEndRange.value = Math.min(30, total).toString();
+            } else if (preset === 'last15') {
+                trimStartRange.value = Math.max(0, total - 15).toString();
+                trimEndRange.value = total.toString();
+            }
+            updateTrimUI();
+            syncVideoTime(parseFloat(trimStartRange.value));
+        });
+    });
+
+    // Preview clip playback
+    let isAuditioning = false;
+
+    function resetPreviewSegmentBtn() {
+        isAuditioning = false;
+        if (previewSegmentText) previewSegmentText.textContent = 'Play Clip';
+        if (previewSegmentIcon) {
+            previewSegmentIcon.setAttribute('data-lucide', 'play');
+            if (window.lucide && previewSegmentBtn) window.lucide.createIcons({ root: previewSegmentBtn });
+        }
+    }
+
+    function startClipAudition() {
+        if (!previewVideo) return;
+        const start = parseFloat(trimStartRange.value) || 0;
+
+        previewVideo.classList.remove('hidden');
+        if (previewThumbnail) previewThumbnail.classList.add('hidden');
+        if (playOverlayBtn) playOverlayBtn.classList.add('hidden');
+
+        previewVideo.currentTime = start;
+        previewVideo.play().then(() => {
+            isAuditioning = true;
+            if (previewSegmentText) previewSegmentText.textContent = 'Pause Clip';
+            if (previewSegmentIcon) {
+                previewSegmentIcon.setAttribute('data-lucide', 'pause');
+                if (window.lucide && previewSegmentBtn) window.lucide.createIcons({ root: previewSegmentBtn });
+            }
+        }).catch(err => {
+            console.warn('Playback error:', err);
+        });
+    }
+
+    function stopClipAudition() {
+        if (previewVideo) previewVideo.pause();
+        resetPreviewSegmentBtn();
+    }
+
+    if (previewSegmentBtn) {
+        previewSegmentBtn.addEventListener('click', () => {
+            if (isAuditioning && previewVideo && !previewVideo.paused) {
+                stopClipAudition();
+            } else {
+                startClipAudition();
+            }
+        });
+    }
+
+    if (playOverlayBtn) {
+        playOverlayBtn.addEventListener('click', () => {
+            startClipAudition();
+        });
+    }
+
+    if (previewVideo) {
+        previewVideo.addEventListener('timeupdate', () => {
+            if (isAuditioning) {
+                const end = parseFloat(trimEndRange.value) || 0;
+                if (previewVideo.currentTime >= end) {
+                    previewVideo.pause();
+                    previewVideo.currentTime = parseFloat(trimStartRange.value) || 0;
+                    resetPreviewSegmentBtn();
+                }
+            }
+        });
+
+        previewVideo.addEventListener('pause', () => {
+            if (isAuditioning && previewVideo.currentTime < parseFloat(trimEndRange.value)) {
+                resetPreviewSegmentBtn();
+            }
+        });
+    }
+
+    // Trimmed Downloads
+    async function executeTrimDownload(mediaType) {
+        if (!currentMedia) return;
+
+        const start = parseFloat(trimStartRange.value) || 0;
+        const end = parseFloat(trimEndRange.value) || 0;
+        const isVideo = (mediaType === 'video');
+        const sourceUrl = isVideo 
+            ? (currentMedia.download_url_hd || currentMedia.direct_link) 
+            : (currentMedia.download_url_audio || currentMedia.download_url_hd || currentMedia.direct_link);
+
+        const btn = isVideo ? btnDownloadTrimmedVideo : btnDownloadTrimmedAudio;
+        const loader = isVideo ? trimVideoLoader : trimAudioLoader;
+        const ext = isVideo ? 'mp4' : 'mp3';
+        const label = isVideo ? 'Trimmed Video HD (with Audio)' : 'Trimmed Audio MP3';
+        const filename = `clipown_trim_${Math.round(start)}s_to_${Math.round(end)}s_${currentMedia.shortcode || 'clip'}.${ext}`;
+
+        if (btn) btn.disabled = true;
+        if (loader) loader.classList.remove('hidden');
+        showToast(`Preparing ${label}... Cutting with synchronized sound!`, 'info', 4000);
+
+        const trimDownloadUrl = `/api/trim-download?url=${encodeURIComponent(sourceUrl)}&start=${start}&end=${end}&media_type=${mediaType}&filename=${encodeURIComponent(filename)}`;
+
+        try {
+            triggerBrowserDownload(trimDownloadUrl);
+            setTimeout(() => {
+                showToast(`${label} download started!`, 'success');
+                if (btn) btn.disabled = false;
+                if (loader) loader.classList.add('hidden');
+            }, 2000);
+        } catch (err) {
+            console.error(err);
+            showToast(`Failed to download ${label}`, 'error');
+            if (btn) btn.disabled = false;
+            if (loader) loader.classList.add('hidden');
+        }
+    }
+
+    if (btnDownloadTrimmedVideo) {
+        btnDownloadTrimmedVideo.addEventListener('click', () => executeTrimDownload('video'));
+    }
+
+    if (btnDownloadTrimmedAudio) {
+        btnDownloadTrimmedAudio.addEventListener('click', () => executeTrimDownload('audio'));
+    }
 
     // --------------------------------------------------------------------------
     // Settings & Cookie Modal Handlers

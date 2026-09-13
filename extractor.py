@@ -119,7 +119,8 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
             title = info.get('title') or info.get('description', '')[:100] or f"Instagram Reel [{shortcode}]"
             author = info.get('uploader') or info.get('uploader_id') or info.get('channel') or "instagram_user"
             thumbnail = info.get('thumbnail') or "https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=800&auto=format&fit=crop&q=80"
-            duration = format_duration(info.get('duration'))
+            raw_duration = float(info.get('duration') or 30.0)
+            duration = format_duration(raw_duration)
             width = info.get('width') or 1080
             height = info.get('height') or 1920
             resolution = f"{width} x {height}"
@@ -134,6 +135,7 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
                 "author_avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
                 "thumbnail": thumbnail,
                 "duration": duration,
+                "duration_seconds": max(1.0, round(raw_duration, 1)),
                 "format": "MP4 (H.264)",
                 "resolution": resolution,
                 "size": size,
