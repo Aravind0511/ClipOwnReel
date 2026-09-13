@@ -74,6 +74,10 @@ def download_stream_chunked(url: str, ext: str = "mp4") -> str:
                 
     return temp_file
 
+class NoAudioStreamError(RuntimeError):
+    """Raised when source media does not contain any audio stream to extract."""
+    pass
+
 def mux_video_audio(video_url: str, audio_url: str) -> str:
     """
     Muxes a video stream and audio stream into a single MP4 with stream copy in ~1-2 seconds.
@@ -94,7 +98,7 @@ def mux_video_audio(video_url: str, audio_url: str) -> str:
         "-headers", headers,
         "-i", audio_url,
         "-map", "0:v:0",
-        "-map", "1:a:0",
+        "-map", "1:a?",
         "-c:v", "copy",
         "-c:a", "aac",
         "-movflags", "+faststart",
@@ -117,7 +121,7 @@ def mux_video_audio(video_url: str, audio_url: str) -> str:
             "-i", temp_v,
             "-i", temp_a,
             "-map", "0:v:0",
-            "-map", "1:a:0",
+            "-map", "1:a?",
             "-c:v", "copy",
             "-c:a", "aac",
             "-movflags", "+faststart",
@@ -125,7 +129,8 @@ def mux_video_audio(video_url: str, audio_url: str) -> str:
         ]
         res_fb = subprocess.run(fallback_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if res_fb.returncode != 0 or not os.path.exists(out_file) or os.path.getsize(out_file) == 0:
-            raise RuntimeError(f"FFmpeg muxing failed: {res_fb.stderr[-400:] if res_fb.stderr else 'Mux error'}")
+            err = res_fb.stderr if res_fb.stderr else 'Mux error'
+            raise RuntimeError(f"FFmpeg muxing failed: {err[-400:]}")
         return out_file
     finally:
         if temp_v and temp_v != video_url and os.path.exists(temp_v):
@@ -164,6 +169,10 @@ def extract_mp3_audio(source_url: str) -> str:
     if res.returncode == 0 and os.path.exists(out_file) and os.path.getsize(out_file) > 1000:
         return out_file
         
+    # Check if direct run failed specifically because input has no audio stream
+    if res.stderr and "does not contain any stream" in res.stderr.lower():
+        raise NoAudioStreamError("The source media does not contain an audio stream.")
+
     # Fallback: download source to temp file and extract MP3
     temp_src = None
     try:
@@ -179,7 +188,10 @@ def extract_mp3_audio(source_url: str) -> str:
         ]
         res_fb = subprocess.run(fallback_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if res_fb.returncode != 0 or not os.path.exists(out_file) or os.path.getsize(out_file) == 0:
-            raise RuntimeError(f"FFmpeg MP3 extraction failed: {res_fb.stderr[-400:] if res_fb.stderr else 'Extract error'}")
+            err = res_fb.stderr if res_fb.stderr else 'Extract error'
+            if "does not contain any stream" in err.lower():
+                raise NoAudioStreamError("The source media does not contain an audio stream.")
+            raise RuntimeError(f"FFmpeg MP3 extraction failed: {err[-400:]}")
         return out_file
     finally:
         if temp_src and temp_src != source_url and os.path.exists(temp_src):

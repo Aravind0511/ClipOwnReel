@@ -93,6 +93,8 @@ def trim_media(
                     "-ss", f"{start_time:.3f}",
                     "-i", temp_audio,
                     "-t", f"{duration:.3f}",
+                    "-map", "0:v:0",
+                    "-map", "1:a?",
                     "-c:v", "libx264",
                     "-preset", "ultrafast",
                     "-crf", "22",
@@ -102,13 +104,15 @@ def trim_media(
                     temp_output
                 ]
             else:
-                # Video with embedded progressive audio
+                # Video with embedded progressive audio (or video only if audio withheld)
                 cmd = [
                     ffmpeg_bin,
                     "-y",
                     "-ss", f"{start_time:.3f}",
                     "-i", temp_input,
                     "-t", f"{duration:.3f}",
+                    "-map", "0:v:0",
+                    "-map", "0:a?",
                     "-c:v", "libx264",
                     "-preset", "ultrafast",
                     "-crf", "22",
@@ -141,7 +145,10 @@ def trim_media(
         )
 
         if process.returncode != 0:
-            raise RuntimeError(f"FFmpeg processing error: {process.stderr[-500:] if process.stderr else 'Unknown error'}")
+            err = process.stderr if process.stderr else "Unknown error"
+            if "does not contain any stream" in err.lower():
+                raise RuntimeError("The source media does not contain an audio stream.")
+            raise RuntimeError(f"FFmpeg processing error: {err[-400:]}")
 
         if not os.path.exists(temp_output) or os.path.getsize(temp_output) == 0:
             raise RuntimeError("FFmpeg generated an empty trimmed file.")

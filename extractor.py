@@ -5,10 +5,47 @@ Extracts real Instagram video/audio streams using yt-dlp.
 
 import os
 import re
+import tempfile
+import uuid
 import yt_dlp
 from ffmpeg_utils import ensure_ffmpeg
 
 COOKIE_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.txt")
+
+def convert_to_netscape_content(cookie_str: str) -> str:
+    """
+    Converts a raw cookie string, key-value pairs, or raw sessionid into standard Netscape format.
+    """
+    cleaned = cookie_str.strip()
+    if "# Netscape" in cleaned:
+        return cleaned
+    
+    # If user pasted just the raw sessionid token without 'sessionid='
+    if "=" not in cleaned and len(cleaned) > 10:
+        cleaned = f"sessionid={cleaned}"
+        
+    lines = ["# Netscape HTTP Cookie File\n"]
+    for item in cleaned.split(";"):
+        item = item.strip()
+        if not item or "=" not in item:
+            continue
+        key, val = item.split("=", 1)
+        key = key.strip()
+        val = val.strip()
+        if key and val:
+            lines.append(f".instagram.com\tTRUE\t/\tTRUE\t2147483647\t{key}\t{val}\n")
+    return "".join(lines)
+
+def create_netscape_cookiefile(cookie_str: str) -> str:
+    """
+    Writes a temporary Netscape-formatted cookie file for yt-dlp.
+    """
+    content = convert_to_netscape_content(cookie_str)
+    temp_dir = tempfile.gettempdir()
+    cookie_path = os.path.join(temp_dir, f"clipown_cookie_{uuid.uuid4().hex[:8]}.txt")
+    with open(cookie_path, "w", encoding="utf-8") as f:
+        f.write(content)
+    return cookie_path
 
 def clean_instagram_url(url: str) -> str:
     """
@@ -61,11 +98,10 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
     }
     
     # Configure custom cookies if valid
+    cookie_temp_file = None
     if cookie_string and len(cookie_string.strip()) > 10:
-        ydl_opts['http_headers'] = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-            'Cookie': cookie_string.strip(),
-        }
+        cookie_temp_file = create_netscape_cookiefile(cookie_string.strip())
+        ydl_opts['cookiefile'] = cookie_temp_file
     elif os.path.exists(COOKIE_FILE_PATH) and os.path.getsize(COOKIE_FILE_PATH) > 10:
         ydl_opts['cookiefile'] = COOKIE_FILE_PATH
         
@@ -90,10 +126,10 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
                 )
             ]
             
-            # 2. Progressive streams (Format 1, 2, 3 or formats bundling video + audio)
+            # 2. Progressive streams (MUST NOT have acodec == 'none')
             progressive_formats = [
                 f for f in formats
-                if f.get('url') and (
+                if f.get('url') and f.get('acodec') != 'none' and (
                     str(f.get('format_id', '')) in ['1', '2', '3']
                     or 'progressive' in f.get('url', '').lower()
                     or (
@@ -102,19 +138,8 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
                     )
                 )
             ]
-            default_url = info.get('url')
 
-            # Determine best audio URL (must contain audio track!)
-            if audio_formats:
-                best_audio_url = audio_formats[0]['url']
-            elif progressive_formats:
-                best_audio_url = progressive_formats[-1]['url']
-            elif default_url:
-                best_audio_url = default_url
-            else:
-                best_audio_url = None
-            
-            # 3. DASH video-only streams (e.g. 1080p, requires audio mux)
+            # 3. DASH video-only streams (highest quality e.g. 1080p, requires audio mux)
             dash_video_formats = [
                 f for f in formats
                 if f.get('url') and (
@@ -125,15 +150,21 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
             if dash_video_formats:
                 dash_video_formats.sort(key=lambda x: (x.get('height') or 0, x.get('tbr') or 0))
 
-            # Determine Progressive SD stream (guaranteed to contain audio & video in standard H.264)
-            if progressive_formats:
-                video_sd = progressive_formats[-1]['url']
-            elif default_url:
-                video_sd = default_url
-            elif dash_video_formats:
-                video_sd = dash_video_formats[0]['url']
+            # General video formats (fallback)
+            any_video_formats = [
+                f for f in formats
+                if f.get('url') and (f.get('vcodec') != 'none' or 'v' in str(f.get('format_id', '')))
+            ]
+
+            # Determine best audio URL (must contain authentic audio stream)
+            if audio_formats:
+                best_audio_url = audio_formats[0]['url']
+            elif progressive_formats:
+                best_audio_url = progressive_formats[-1]['url']
             else:
-                video_sd = None
+                best_audio_url = None
+
+            has_audio = (best_audio_url is not None)
 
             # Determine HD video stream
             if dash_video_formats:
@@ -147,18 +178,27 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
                 hd_height = progressive_formats[-1].get('height') or 720
                 hd_width = progressive_formats[-1].get('width') or 1280
                 separate_audio_url = None
+            elif any_video_formats:
+                video_hd = any_video_formats[-1]['url']
+                hd_height = any_video_formats[-1].get('height') or 720
+                hd_width = any_video_formats[-1].get('width') or 1280
+                separate_audio_url = None
             else:
-                video_hd = default_url
+                video_hd = info.get('url')
                 hd_height = info.get('height') or 1080
                 hd_width = info.get('width') or 1920
                 separate_audio_url = None
 
-            if not video_sd:
+            # Determine SD video stream
+            if progressive_formats:
+                video_sd = progressive_formats[0]['url']
+            elif any_video_formats:
+                video_sd = any_video_formats[0]['url']
+            else:
                 video_sd = video_hd
 
-            # Preview Stream: MUST ALWAYS CONTAIN SOUND for web player and trimmer audition!
-            preview_url = video_sd if video_sd else video_hd
-            audio_url = best_audio_url if best_audio_url else preview_url
+            # Preview Stream: MUST HAVE AUDIO IF AVAILABLE
+            preview_url = progressive_formats[-1]['url'] if progressive_formats else (video_sd if video_sd else video_hd)
 
             if not video_hd:
                 return {
@@ -188,9 +228,11 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
                 "format": "MP4 (H.264)",
                 "resolution": resolution,
                 "size": size,
+                "has_audio": has_audio,
+                "auth_required": not has_audio,
                 "download_url_hd": video_hd,
                 "download_url_sd": video_sd,
-                "download_url_audio": audio_url,
+                "download_url_audio": best_audio_url,
                 "separate_audio_url": separate_audio_url,
                 "sd_audio_url": None,
                 "preview_url": preview_url,
@@ -210,3 +252,9 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
             "message": msg,
             "error_detail": err_text
         }
+    finally:
+        if cookie_temp_file and os.path.exists(cookie_temp_file):
+            try:
+                os.remove(cookie_temp_file)
+            except OSError:
+                pass

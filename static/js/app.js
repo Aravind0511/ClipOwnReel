@@ -362,6 +362,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     btnDownloadAudio.addEventListener('click', () => {
         if (!currentMedia) return;
+        if (currentMedia.auth_required && !currentMedia.download_url_audio) {
+            showToast('Instagram restricted audio on cloud servers. Click "Add Cookie" in Settings to unlock MP3 audio.', 'warning', 5000);
+            if (settingsModal) settingsModal.classList.remove('hidden');
+            return;
+        }
         showToast('Initiating MP3 Audio download (converting with FFmpeg)...', 'success');
         const audioSrc = currentMedia.download_url_audio || currentMedia.preview_url || currentMedia.download_url_sd || currentMedia.separate_audio_url || currentMedia.direct_link;
         const downloadPath = `/api/download?url=${encodeURIComponent(audioSrc)}&filename=clipown_audio_${currentMedia.shortcode || 'audio'}.mp3&media_type=audio`;
@@ -656,9 +661,15 @@ document.addEventListener('DOMContentLoaded', () => {
     async function executeTrimDownload(mediaType) {
         if (!currentMedia) return;
 
+        const isVideo = (mediaType === 'video');
+        if (!isVideo && currentMedia.auth_required && !currentMedia.download_url_audio) {
+            showToast('Instagram restricted audio on cloud servers. Click "Add Cookie" in Settings to enable audio trimming.', 'warning', 5000);
+            if (settingsModal) settingsModal.classList.remove('hidden');
+            return;
+        }
+
         const start = parseFloat(trimStartRange.value) || 0;
         const end = parseFloat(trimEndRange.value) || 0;
-        const isVideo = (mediaType === 'video');
         const sourceUrl = isVideo 
             ? (currentMedia.preview_url || currentMedia.download_url_sd || currentMedia.download_url_hd || currentMedia.direct_link) 
             : (currentMedia.download_url_audio || currentMedia.preview_url || currentMedia.download_url_sd || currentMedia.separate_audio_url || currentMedia.direct_link);
@@ -745,8 +756,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const result = await res.json();
                 if (result.success) {
                     localStorage.setItem('clipown_ig_cookie', cookieVal);
-                    showToast('Cookie saved! Full extraction active.', 'success');
+                    showToast('Cookie saved! Full audio extraction is now active.', 'success');
                     closeModal();
+                    if (videoUrlInput && videoUrlInput.value.trim() && isInstagramUrl(videoUrlInput.value.trim())) {
+                        triggerMediaFetch(videoUrlInput.value.trim());
+                    }
                 } else {
                     showToast('Failed to save cookie: ' + result.message, 'error');
                 }

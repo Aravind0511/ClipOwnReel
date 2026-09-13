@@ -10,9 +10,9 @@ from fastapi import FastAPI, Query, HTTPException, Request, Response, Background
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from extractor import extract_instagram_media, COOKIE_FILE_PATH
+from extractor import extract_instagram_media, COOKIE_FILE_PATH, convert_to_netscape_content
 from trimmer import trim_media
-from ffmpeg_utils import ensure_ffmpeg, mux_video_audio, extract_mp3_audio
+from ffmpeg_utils import ensure_ffmpeg, mux_video_audio, extract_mp3_audio, NoAudioStreamError
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
@@ -31,7 +31,15 @@ app = FastAPI(
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 # In-memory or env-based cookie store
-ACTIVE_COOKIE = os.environ.get("INSTAGRAM_COOKIE", "")
+ACTIVE_COOKIE = os.environ.get("INSTAGRAM_COOKIE", "").strip()
+if ACTIVE_COOKIE:
+    try:
+        netscape_data = convert_to_netscape_content(ACTIVE_COOKIE)
+        with open(COOKIE_FILE_PATH, "w", encoding="utf-8") as f:
+            f.write(netscape_data)
+        print("Loaded authenticated Instagram cookie from INSTAGRAM_COOKIE environment variable.")
+    except Exception as e:
+        print(f"Failed to initialize INSTAGRAM_COOKIE: {e}")
 
 class CookiePayload(BaseModel):
     cookie: str
@@ -88,6 +96,11 @@ async def download_media(
 
     # 1. Audio Download Request (extract authentic MP3)
     if media_type.lower() == "audio" or filename.lower().endswith(".mp3"):
+        if not clean_url or clean_url.lower() in ["none", "null", "undefined", "#"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Instagram restricted the audio stream for this Reel on guest cloud requests. Please add your Instagram session cookie in Settings to download audio."
+            )
         safe_filename = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', filename)
         if not safe_filename.endswith(".mp3"):
             safe_filename += ".mp3"
@@ -103,11 +116,22 @@ async def download_media(
                     "Access-Control-Allow-Origin": "*"
                 }
             )
+        except NoAudioStreamError:
+            raise HTTPException(
+                status_code=400,
+                detail="No audio stream detected in this Instagram Reel. On cloud servers, Instagram restricts audio streams for unauthenticated requests. Please add an Instagram session cookie in Settings to download MP3 audio."
+            )
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to generate MP3 audio: {str(e)}")
+            err_msg = str(e)
+            if "does not contain any stream" in err_msg.lower() or "no audio stream" in err_msg.lower():
+                raise HTTPException(
+                    status_code=400,
+                    detail="No audio stream detected in this Reel. Please add your Instagram session cookie in Settings to unlock audio extraction."
+                )
+            raise HTTPException(status_code=500, detail=f"Failed to generate MP3 audio: {err_msg}")
 
     # 2. Video Download with separate audio stream (mux DASH video + audio)
-    if audio_url and audio_url.strip() and audio_url.strip() != clean_url:
+    if audio_url and audio_url.strip() and audio_url.strip().lower() not in ["none", "null", "undefined", clean_url.lower()]:
         safe_filename = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', filename)
         if not safe_filename.endswith(".mp4"):
             safe_filename += ".mp4"
@@ -123,14 +147,14 @@ async def download_media(
                     "Access-Control-Allow-Origin": "*"
                 }
             )
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to mux video and audio: {str(e)}")
+        except Exception:
+            # If audio muxing fails, gracefully fall back to direct video stream
+            pass
 
     # 3. Progressive Video or Direct Streaming
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-            "Referer": "https://www.instagram.com/",
             "Accept": "*/*",
         }
         req = requests.get(clean_url, stream=True, timeout=30, headers=headers)
@@ -179,7 +203,6 @@ async def stream_media_for_preview(request: Request, url: str = Query(..., descr
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-        "Referer": "https://www.instagram.com/",
         "Accept": "*/*",
     }
     
@@ -267,12 +290,27 @@ async def trim_download_media(
             }
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Trim processing failed: {str(e)}")
+        err_msg = str(e)
+        if "does not contain any stream" in err_msg.lower() or "no audio stream" in err_msg.lower():
+            raise HTTPException(
+                status_code=400,
+                detail="Unable to trim audio: No audio stream detected in this Instagram Reel. On cloud servers, Instagram restricts audio for unauthenticated requests. Please add an Instagram session cookie in Settings to trim audio."
+            )
+        raise HTTPException(status_code=500, detail=f"Trim processing failed: {err_msg}")
+
+@app.get("/api/settings/cookie")
+async def get_cookie_status():
+    """
+    Returns whether an authenticated Instagram session cookie is active.
+    """
+    has_cookie = bool(ACTIVE_COOKIE or (os.path.exists(COOKIE_FILE_PATH) and os.path.getsize(COOKIE_FILE_PATH) > 10))
+    return {"has_cookie": has_cookie}
 
 @app.post("/api/settings/cookie")
 async def save_cookie(payload: CookiePayload):
     """
     Save or clear the Instagram session cookie.
+    Converts raw cookies or sessionid into Netscape format for yt-dlp.
     """
     global ACTIVE_COOKIE
     cookie_str = payload.cookie.strip()
@@ -288,9 +326,10 @@ async def save_cookie(payload: CookiePayload):
     
     ACTIVE_COOKIE = cookie_str
     try:
+        netscape_data = convert_to_netscape_content(ACTIVE_COOKIE)
         with open(COOKIE_FILE_PATH, "w", encoding="utf-8") as f:
-            f.write(ACTIVE_COOKIE)
-        return {"success": True, "message": "Cookie saved successfully!"}
+            f.write(netscape_data)
+        return {"success": True, "message": "Cookie saved successfully! Requests are now authenticated with Instagram."}
     except Exception as e:
         return {"success": False, "message": str(e)}
 
