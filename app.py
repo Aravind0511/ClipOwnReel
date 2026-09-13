@@ -419,8 +419,30 @@ async def system_diag():
         has_audio_in_manifest = False
         manifest_len = 0
 
+    cookie_snippet = None
+    if os.path.exists(COOKIE_FILE_PATH):
+        try:
+            with open(COOKIE_FILE_PATH, "r", encoding="utf-8") as f:
+                cookie_snippet = f.read()[:200]
+        except Exception as e:
+            cookie_snippet = f"Error reading: {e}"
+
+    extract_diag = None
+    try:
+        extract_diag = extract_instagram_media("https://www.instagram.com/reel/Dcp3JkzJTA6/", cookie_string=ACTIVE_COOKIE)
+        # remove giant urls for readability
+        for k in list(extract_diag.keys()):
+            if 'url' in k and extract_diag[k]:
+                extract_diag[k] = extract_diag[k][:80] + "..."
+    except Exception as e:
+        extract_diag = f"Extract exception: {str(e)}"
+
     return {
         "os": os.name,
+        "active_cookie_len": len(ACTIVE_COOKIE),
+        "cookie_file_exists": os.path.exists(COOKIE_FILE_PATH),
+        "cookie_snippet": cookie_snippet,
+        "extract_diag": extract_diag,
         "ffmpeg_bin": exe,
         "ffmpeg_exists": os.path.exists(exe),
         "raw_exe": raw_exe,
