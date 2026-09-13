@@ -12,10 +12,14 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from extractor import extract_instagram_media, COOKIE_FILE_PATH
 from trimmer import trim_media
+from ffmpeg_utils import ensure_ffmpeg, mux_video_audio, extract_mp3_audio
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
 STATIC_DIR = os.path.join(BASE_DIR, "static")
+
+# Ensure FFmpeg is available and in PATH
+ensure_ffmpeg()
 
 app = FastAPI(
     title="ClipOwn API",
@@ -67,30 +71,74 @@ async def fetch_info(url: str = Query(..., description="Instagram Reel, Video, o
     return JSONResponse(content=result)
 
 @app.api_route("/api/download", methods=["GET", "HEAD"])
-async def download_media(url: str = Query(..., description="Direct media URL to download"), filename: str = "clipown_video.mp4"):
+async def download_media(
+    background_tasks: BackgroundTasks,
+    url: str = Query(..., description="Direct media URL to download"),
+    filename: str = Query("clipown_video.mp4", description="Output filename"),
+    audio_url: str = Query(None, description="Optional separate audio stream URL to mux"),
+    media_type: str = Query("video", description="Download format type: video or audio")
+):
     """
-    Stream video or audio file directly to the client with forced attachment header.
-    Bypasses CORS and triggers a true file download in browser.
+    Stream or transcode video/audio file directly to client with forced attachment header.
+    Automatically muxes DASH video + audio streams, and converts audio streams to authentic MP3.
     """
     clean_url = url.strip()
     if not clean_url or clean_url == "#":
         raise HTTPException(status_code=400, detail="Invalid media download URL.")
 
+    # 1. Audio Download Request (extract authentic MP3)
+    if media_type.lower() == "audio" or filename.lower().endswith(".mp3"):
+        safe_filename = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', filename)
+        if not safe_filename.endswith(".mp3"):
+            safe_filename += ".mp3"
+        try:
+            mp3_path = extract_mp3_audio(clean_url)
+            background_tasks.add_task(os.remove, mp3_path)
+            return FileResponse(
+                mp3_path,
+                media_type="audio/mpeg",
+                filename=safe_filename,
+                headers={
+                    "Content-Disposition": f'attachment; filename="{safe_filename}"',
+                    "Access-Control-Allow-Origin": "*"
+                }
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to generate MP3 audio: {str(e)}")
+
+    # 2. Video Download with separate audio stream (mux DASH video + audio)
+    if audio_url and audio_url.strip() and audio_url.strip() != clean_url:
+        safe_filename = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', filename)
+        if not safe_filename.endswith(".mp4"):
+            safe_filename += ".mp4"
+        try:
+            muxed_path = mux_video_audio(clean_url, audio_url.strip())
+            background_tasks.add_task(os.remove, muxed_path)
+            return FileResponse(
+                muxed_path,
+                media_type="video/mp4",
+                filename=safe_filename,
+                headers={
+                    "Content-Disposition": f'attachment; filename="{safe_filename}"',
+                    "Access-Control-Allow-Origin": "*"
+                }
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to mux video and audio: {str(e)}")
+
+    # 3. Progressive Video or Direct Streaming
     try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
             "Referer": "https://www.instagram.com/",
             "Accept": "*/*",
         }
-        req = requests.get(clean_url, stream=True, timeout=25, headers=headers)
+        req = requests.get(clean_url, stream=True, timeout=30, headers=headers)
         
         if req.status_code != 200:
             raise HTTPException(status_code=req.status_code, detail="Media stream provider returned an error.")
 
-        # Determine content type
         content_type = req.headers.get("Content-Type", "video/mp4")
-        
-        # Safe filename
         safe_filename = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', filename)
         if not safe_filename.endswith(('.mp4', '.mp3', '.m4a')):
             safe_filename += '.mp4'
@@ -100,17 +148,17 @@ async def download_media(url: str = Query(..., description="Direct media URL to 
                 if chunk:
                     yield chunk
 
-        headers = {
+        resp_headers = {
             "Content-Disposition": f'attachment; filename="{safe_filename}"',
             "Access-Control-Allow-Origin": "*"
         }
         if "Content-Length" in req.headers:
-            headers["Content-Length"] = req.headers["Content-Length"]
+            resp_headers["Content-Length"] = req.headers["Content-Length"]
 
         return StreamingResponse(
             iterfile(),
             media_type=content_type,
-            headers=headers
+            headers=resp_headers
         )
     except HTTPException:
         raise
@@ -172,7 +220,8 @@ async def trim_download_media(
     start: float = Query(0.0, description="Start timestamp in seconds"),
     end: float = Query(..., description="End timestamp in seconds"),
     media_type: str = Query("video", description="Trim output format: video or audio"),
-    filename: str = Query("clipown_trimmed.mp4", description="Output filename")
+    filename: str = Query("clipown_trimmed.mp4", description="Output filename"),
+    audio_url: str = Query(None, description="Optional separate audio stream URL for DASH streams")
 ):
     """
     Trims video or audio using FFmpeg and streams the cut file directly to the client.
@@ -191,7 +240,8 @@ async def trim_download_media(
             source_url=clean_url,
             start_time=start,
             end_time=end,
-            media_type=media_type
+            media_type=media_type,
+            audio_url=audio_url.strip() if audio_url else None
         )
 
         # File cleanup task after streaming

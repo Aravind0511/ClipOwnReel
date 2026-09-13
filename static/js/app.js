@@ -332,25 +332,40 @@ document.addEventListener('DOMContentLoaded', () => {
     // --------------------------------------------------------------------------
     // Download Action Handlers (Stream via /api/download)
     // --------------------------------------------------------------------------
+    function getEndpointUrl(path) {
+        const apiBase = window.location.hostname.includes('github.io') 
+            ? (localStorage.getItem('clipown_backend_url') || '') 
+            : '';
+        return apiBase ? `${apiBase.replace(/\/$/, '')}${path}` : path;
+    }
+
     btnDownloadHD.addEventListener('click', () => {
         if (!currentMedia) return;
-        showToast('Initiating 1080p HD Video download...', 'success');
-        const downloadUrl = `/api/download?url=${encodeURIComponent(currentMedia.download_url_hd || currentMedia.direct_link)}&filename=clipown_1080p_${currentMedia.shortcode || 'video'}.mp4`;
-        triggerBrowserDownload(downloadUrl);
+        showToast('Initiating 1080p HD Video download (with synchronized audio)...', 'success');
+        let downloadPath = `/api/download?url=${encodeURIComponent(currentMedia.download_url_hd || currentMedia.direct_link)}&filename=clipown_1080p_${currentMedia.shortcode || 'video'}.mp4&media_type=video`;
+        if (currentMedia.separate_audio_url) {
+            downloadPath += `&audio_url=${encodeURIComponent(currentMedia.separate_audio_url)}`;
+        }
+        triggerBrowserDownload(getEndpointUrl(downloadPath));
     });
 
     btnDownloadSD.addEventListener('click', () => {
         if (!currentMedia) return;
         showToast('Initiating 720p Video download...', 'success');
-        const downloadUrl = `/api/download?url=${encodeURIComponent(currentMedia.download_url_sd || currentMedia.direct_link)}&filename=clipown_720p_${currentMedia.shortcode || 'video'}.mp4`;
-        triggerBrowserDownload(downloadUrl);
+        let downloadPath = `/api/download?url=${encodeURIComponent(currentMedia.download_url_sd || currentMedia.direct_link)}&filename=clipown_720p_${currentMedia.shortcode || 'video'}.mp4&media_type=video`;
+        const audioToUse = currentMedia.sd_audio_url || currentMedia.separate_audio_url;
+        if (audioToUse) {
+            downloadPath += `&audio_url=${encodeURIComponent(audioToUse)}`;
+        }
+        triggerBrowserDownload(getEndpointUrl(downloadPath));
     });
 
     btnDownloadAudio.addEventListener('click', () => {
         if (!currentMedia) return;
-        showToast('Initiating MP3 Audio download...', 'success');
-        const downloadUrl = `/api/download?url=${encodeURIComponent(currentMedia.download_url_audio || currentMedia.direct_link)}&filename=clipown_audio_${currentMedia.shortcode || 'audio'}.mp3`;
-        triggerBrowserDownload(downloadUrl);
+        showToast('Initiating MP3 Audio download (converting with FFmpeg)...', 'success');
+        const audioSrc = currentMedia.download_url_audio || currentMedia.separate_audio_url || currentMedia.download_url_hd || currentMedia.direct_link;
+        const downloadPath = `/api/download?url=${encodeURIComponent(audioSrc)}&filename=clipown_audio_${currentMedia.shortcode || 'audio'}.mp3&media_type=audio`;
+        triggerBrowserDownload(getEndpointUrl(downloadPath));
     });
 
     function triggerBrowserDownload(url) {
@@ -657,10 +672,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (loader) loader.classList.remove('hidden');
         showToast(`Preparing ${label}... Cutting with synchronized sound!`, 'info', 4000);
 
-        const trimDownloadUrl = `/api/trim-download?url=${encodeURIComponent(sourceUrl)}&start=${start}&end=${end}&media_type=${mediaType}&filename=${encodeURIComponent(filename)}`;
+        let trimDownloadPath = `/api/trim-download?url=${encodeURIComponent(sourceUrl)}&start=${start}&end=${end}&media_type=${mediaType}&filename=${encodeURIComponent(filename)}`;
+        if (isVideo && currentMedia.separate_audio_url) {
+            trimDownloadPath += `&audio_url=${encodeURIComponent(currentMedia.separate_audio_url)}`;
+        } else if (!isVideo && (currentMedia.download_url_audio || currentMedia.separate_audio_url)) {
+            const audioSrc = currentMedia.download_url_audio || currentMedia.separate_audio_url;
+            trimDownloadPath += `&audio_url=${encodeURIComponent(audioSrc)}`;
+        }
 
         try {
-            triggerBrowserDownload(trimDownloadUrl);
+            triggerBrowserDownload(getEndpointUrl(trimDownloadPath));
             setTimeout(() => {
                 showToast(`${label} download started!`, 'success');
                 if (btn) btn.disabled = false;

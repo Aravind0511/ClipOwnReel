@@ -8,3 +8,4 @@ cookies.txt
 *.mp3
 .vscode/
 .idea/
+bin/

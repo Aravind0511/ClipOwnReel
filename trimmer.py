@@ -8,11 +8,11 @@ import subprocess
 import tempfile
 import uuid
 import requests
-import imageio_ffmpeg
+from ffmpeg_utils import ensure_ffmpeg
 
 def get_ffmpeg_path() -> str:
-    """Returns the absolute path to the bundled FFmpeg executable."""
-    return imageio_ffmpeg.get_ffmpeg_exe()
+    """Returns the absolute path to the configured FFmpeg executable."""
+    return ensure_ffmpeg()
 
 def download_source_to_temp(url: str) -> str:
     """
@@ -44,7 +44,8 @@ def trim_media(
     source_url: str,
     start_time: float,
     end_time: float,
-    media_type: str = "video"
+    media_type: str = "video",
+    audio_url: str = None
 ) -> str:
     """
     Trims media between start_time and end_time (in seconds).
@@ -54,6 +55,7 @@ def trim_media(
         start_time: Start timestamp in seconds
         end_time: End timestamp in seconds
         media_type: 'video' (outputs MP4 with audio) or 'audio' (outputs MP3)
+        audio_url: Optional separate audio stream URL for DASH streams
         
     Returns:
         Absolute filepath to the generated temporary file.
@@ -71,7 +73,8 @@ def trim_media(
     duration = end_time - start_time
 
     # Download source to temp file
-    temp_input = download_source_to_temp(source_url)
+    temp_input = None
+    temp_audio = None
     
     temp_dir = tempfile.gettempdir()
     ext = "mp4" if media_type == "video" else "mp3"
@@ -79,23 +82,46 @@ def trim_media(
 
     try:
         if media_type == "video":
-            # Trim both video and audio with ultrafast H.264 + AAC
-            cmd = [
-                ffmpeg_bin,
-                "-y",
-                "-ss", f"{start_time:.3f}",
-                "-i", temp_input,
-                "-t", f"{duration:.3f}",
-                "-c:v", "libx264",
-                "-preset", "ultrafast",
-                "-crf", "22",
-                "-c:a", "aac",
-                "-b:a", "192k",
-                "-movflags", "+faststart",
-                temp_output
-            ]
+            temp_input = download_source_to_temp(source_url)
+            
+            if audio_url and audio_url.strip():
+                temp_audio = download_source_to_temp(audio_url.strip())
+                cmd = [
+                    ffmpeg_bin,
+                    "-y",
+                    "-ss", f"{start_time:.3f}",
+                    "-i", temp_input,
+                    "-ss", f"{start_time:.3f}",
+                    "-i", temp_audio,
+                    "-t", f"{duration:.3f}",
+                    "-c:v", "libx264",
+                    "-preset", "ultrafast",
+                    "-crf", "22",
+                    "-c:a", "aac",
+                    "-b:a", "192k",
+                    "-movflags", "+faststart",
+                    temp_output
+                ]
+            else:
+                # Video with embedded progressive audio
+                cmd = [
+                    ffmpeg_bin,
+                    "-y",
+                    "-ss", f"{start_time:.3f}",
+                    "-i", temp_input,
+                    "-t", f"{duration:.3f}",
+                    "-c:v", "libx264",
+                    "-preset", "ultrafast",
+                    "-crf", "22",
+                    "-c:a", "aac",
+                    "-b:a", "192k",
+                    "-movflags", "+faststart",
+                    temp_output
+                ]
         else:
-            # Trim audio only and output high-bitrate MP3
+            # Audio only
+            target_audio_url = audio_url.strip() if (audio_url and audio_url.strip()) else source_url
+            temp_input = download_source_to_temp(target_audio_url)
             cmd = [
                 ffmpeg_bin,
                 "-y",
@@ -124,9 +150,14 @@ def trim_media(
         return temp_output
 
     finally:
-        # Clean up temporary input file if it was downloaded
-        if temp_input != source_url and os.path.exists(temp_input):
+        # Clean up temporary input files
+        if temp_input and temp_input != source_url and os.path.exists(temp_input):
             try:
                 os.remove(temp_input)
+            except OSError:
+                pass
+        if temp_audio and temp_audio != audio_url and os.path.exists(temp_audio):
+            try:
+                os.remove(temp_audio)
             except OSError:
                 pass
