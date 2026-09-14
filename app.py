@@ -582,7 +582,7 @@ async def system_diag(url: str = Query("https://www.instagram.com/reel/DbUlcPTTb
         if BASE_DIR not in sys.path:
             sys.path.insert(0, BASE_DIR)
         import extractor
-        sc = extractor.extract_shortcode(url)
+        _, sc = extractor.clean_instagram_url(url)
         mid = extractor.shortcode_to_media_id(sc)
         direct_api_diag['shortcode'] = sc
         direct_api_diag['media_id'] = mid
