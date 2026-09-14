@@ -775,6 +775,10 @@ input {
     border-radius: 50%;
     border: 2px solid #e1306c;
     object-fit: cover;
+    background: linear-gradient(135deg, #833ab4, #fd1d1d, #fcb045);
+    aspect-ratio: 1 / 1;
+    display: inline-block;
+    flex-shrink: 0;
 }
 
 .creator-meta {

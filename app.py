@@ -465,6 +465,60 @@ async def health_check():
     """Health check endpoint."""
     return {"status": "ok", "service": "ClipOwn Downloader"}
 
+@app.get("/api/proxy-image")
+async def proxy_image(url: str = Query(..., description="Image URL to proxy")):
+    """
+    Proxies creator avatars and thumbnails to bypass cross-origin hotlinking restrictions,
+    adblockers, and referrer blocking. Automatically serves an elegant SVG fallback if unavailable.
+    """
+    clean_url = url.strip()
+    if not clean_url or not clean_url.startswith("http"):
+        raise HTTPException(status_code=400, detail="Invalid image URL.")
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+        "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+    }
+    try:
+        req = requests.get(clean_url, headers=headers, timeout=8)
+        if req.status_code == 200 and req.content and len(req.content) > 100:
+            content_type = req.headers.get("Content-Type", "image/jpeg")
+            return Response(
+                content=req.content,
+                media_type=content_type,
+                headers={
+                    "Cache-Control": "public, max-age=86400",
+                    "Access-Control-Allow-Origin": "*"
+                }
+            )
+    except Exception:
+        pass
+    
+    # Graceful SVG avatar fallback (Instagram gradient with user silhouette)
+    svg_fallback = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">'
+        '<defs>'
+        '<linearGradient id="ig" x1="0%" y1="100%" x2="100%" y2="0%">'
+        '<stop offset="0%" stop-color="#f09433"/>'
+        '<stop offset="25%" stop-color="#e6683c"/>'
+        '<stop offset="50%" stop-color="#dc2743"/>'
+        '<stop offset="75%" stop-color="#cc2366"/>'
+        '<stop offset="100%" stop-color="#bc1888"/>'
+        '</linearGradient>'
+        '</defs>'
+        '<circle cx="64" cy="64" r="64" fill="url(#ig)"/>'
+        '<path d="M64 60a18 18 0 1 0 0-36 18 18 0 0 0 0 36zm0 10c-20 0-40 10-40 22v8h80v-8c0-12-20-22-40-22z" fill="#ffffff" opacity="0.95"/>'
+        '</svg>'
+    )
+    return Response(
+        content=svg_fallback,
+        media_type="image/svg+xml",
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "Access-Control-Allow-Origin": "*"
+        }
+    )
+
 @app.get("/api/system-diag")
 async def system_diag(url: str = Query("https://www.instagram.com/reel/DbUlcPTTb-l/")):
     """Diagnostic endpoint to inspect FFmpeg, direct API data, and yt-dlp formats for any Reel."""

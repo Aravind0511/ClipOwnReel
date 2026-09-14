@@ -340,7 +340,13 @@ def extract_via_direct_api(url: str, cookie_string: str = None) -> dict:
 
                 user = item.get('user', {})
                 author = user.get('username') or user.get('full_name') or 'instagram_user'
-                author_avatar = user.get('profile_pic_url') or 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'
+                author_avatar = (
+                    user.get('profile_pic_url')
+                    or user.get('profile_pic_url_hd')
+                    or (user.get('hd_profile_pic_url_info') or {}).get('url')
+                    or (user.get('hd_profile_pic_versions') or [{}])[0].get('url')
+                    or f"https://ui-avatars.com/api/?name={requests.utils.quote(author)}&background=e1306c&color=fff&size=128&bold=true"
+                )
 
                 caption = item.get('caption') or {}
                 raw_title = caption.get('text', '') if isinstance(caption, dict) else ''
@@ -597,7 +603,7 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
                 "shortcode": shortcode,
                 "title": title,
                 "author": author,
-                "author_avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+                "author_avatar": f"https://ui-avatars.com/api/?name={requests.utils.quote(str(author))}&background=e1306c&color=fff&size=128&bold=true",
                 "thumbnail": thumbnail,
                 "duration": duration,
                 "duration_seconds": max(1.0, round(raw_duration, 1)),

@@ -315,9 +315,32 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderMediaResult(data) {
         currentMedia = data;
 
-        previewThumbnail.src = data.thumbnail;
+        const authorName = (data.author || 'User').replace(/^@/, '');
+        const rawAvatar = data.author_avatar;
+        const initial = authorName.charAt(0).toUpperCase() || 'U';
+        const fallbackAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(initial)}&background=e1306c&color=fff&size=128&bold=true`;
+
+        if (creatorAvatar) {
+            creatorAvatar.setAttribute('referrerpolicy', 'no-referrer');
+            creatorAvatar.onerror = function() {
+                this.onerror = null;
+                this.src = fallbackAvatar;
+            };
+            if (rawAvatar && rawAvatar.startsWith('http')) {
+                creatorAvatar.src = getEndpointUrl(`/api/proxy-image?url=${encodeURIComponent(rawAvatar)}`);
+            } else {
+                creatorAvatar.src = fallbackAvatar;
+            }
+        }
+
+        if (previewThumbnail) {
+            previewThumbnail.setAttribute('referrerpolicy', 'no-referrer');
+            if (data.thumbnail) {
+                previewThumbnail.src = data.thumbnail;
+            }
+        }
+
         previewDuration.textContent = data.duration || '0:30';
-        creatorAvatar.src = data.author_avatar;
         creatorName.textContent = `@${data.author || 'instagram_user'}`;
         videoCaption.textContent = data.title || 'Instagram Video';
         specFormat.textContent = data.format || 'MP4';
