@@ -466,9 +466,9 @@ async def health_check():
     return {"status": "ok", "service": "ClipOwn Downloader"}
 
 @app.get("/api/system-diag")
-async def system_diag():
-    """Diagnostic endpoint to inspect FFmpeg and yt-dlp formats."""
-    import subprocess, yt_dlp, imageio_ffmpeg
+async def system_diag(url: str = Query("https://www.instagram.com/reel/DbUlcPTTb-l/")):
+    """Diagnostic endpoint to inspect FFmpeg, direct API data, and yt-dlp formats for any Reel."""
+    import subprocess, yt_dlp, imageio_ffmpeg, xml.etree.ElementTree as ET
     exe = ensure_ffmpeg()
     raw_exe = imageio_ffmpeg.get_ffmpeg_exe()
     
@@ -478,26 +478,29 @@ async def system_diag():
     except Exception as e:
         ffmpeg_ver = f"Exception: {str(e)}"
 
+    formats_summary = []
+    raw_manifest = ''
+    has_audio_in_manifest = False
+    manifest_len = 0
     try:
         ydl_opts = {'quiet': True, 'skip_download': True, 'no_warnings': True}
+        if os.path.exists(COOKIE_FILE_PATH) and os.path.getsize(COOKIE_FILE_PATH) > 10:
+            ydl_opts['cookiefile'] = COOKIE_FILE_PATH
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info("https://www.instagram.com/reel/Dcp3JkzJTA6/", download=False)
+            info = ydl.extract_info(url, download=False)
             formats_summary = [{
                 'id': f.get('format_id'),
                 'ext': f.get('ext'),
                 'vcodec': f.get('vcodec'),
                 'acodec': f.get('acodec'),
                 'format_note': f.get('format_note'),
-                'url_snippet': f.get('url', '').split('?')[0][-25:] if f.get('url') else None
+                'url_snippet': f.get('url', '').split('?')[0][-35:] if f.get('url') else None
             } for f in info.get('formats', [])]
             raw_manifest = info.get('video_dash_manifest') or ''
             has_audio_in_manifest = 'audio' in raw_manifest.lower()
             manifest_len = len(raw_manifest)
     except Exception as e:
         formats_summary = f"Error: {str(e)}"
-        raw_manifest = ''
-        has_audio_in_manifest = False
-        manifest_len = 0
 
     cookie_status = "Not configured"
     if os.path.exists(COOKIE_FILE_PATH):
@@ -512,11 +515,10 @@ async def system_diag():
 
     extract_diag = None
     try:
-        extract_diag = extract_instagram_media("https://www.instagram.com/reel/Dcp3JkzJTA6/", cookie_string=ACTIVE_COOKIE)
-        # remove giant urls for readability
+        extract_diag = extract_instagram_media(url, cookie_string=ACTIVE_COOKIE)
         for k in list(extract_diag.keys()):
             if 'url' in k and extract_diag[k]:
-                extract_diag[k] = extract_diag[k][:80] + "..."
+                extract_diag[k] = extract_diag[k][:90] + "..."
     except Exception as e:
         extract_diag = f"Extract exception: {str(e)}"
 
