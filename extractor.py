@@ -442,33 +442,36 @@ def extract_via_ytdlp(url: str, cookie_string: str = None) -> dict:
             pass
 
     ffmpeg_bin = ensure_ffmpeg()
-    ydl_opts = {
-        'quiet': True,
-        'skip_download': True,
-        'no_warnings': True,
-        'ffmpeg_location': ffmpeg_bin,
-    }
 
-    cookie_temp_file = None
+    # Pass 1: Try without cookies first (web player gets complete master audio track with voice + BGM)
+    # Pass 2: If restricted/login required, try with cookies
+    cookie_attempts = [None]
     if effective_cookie and len(effective_cookie.strip()) > 10:
-        cookie_temp_file = create_netscape_cookiefile(effective_cookie.strip())
-        ydl_opts['cookiefile'] = cookie_temp_file
-    elif os.path.exists(COOKIE_FILE_PATH) and os.path.getsize(COOKIE_FILE_PATH) > 10:
-        ydl_opts['cookiefile'] = COOKIE_FILE_PATH
+        cookie_attempts.append(effective_cookie)
 
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(normalized_url, download=False)
+    last_error = None
+    for cookie_try in cookie_attempts:
+        ydl_opts = {
+            'quiet': True,
+            'skip_download': True,
+            'no_warnings': True,
+            'ffmpeg_location': ffmpeg_bin,
+        }
+        cookie_temp_file = None
+        if cookie_try:
+            cookie_temp_file = create_netscape_cookiefile(cookie_try.strip())
+            ydl_opts['cookiefile'] = cookie_temp_file
 
-            if not info:
-                return {
-                    "success": False,
-                    "message": "Could not retrieve media details from Instagram. Please ensure the post is public."
-                }
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(normalized_url, download=False)
 
-            formats = info.get('formats', [])
+                if not info:
+                    continue
 
-            # 1. Dedicated audio streams (master audio with speaking voice + mixed BGM)
+                formats = info.get('formats', [])
+
+                # 1. Dedicated audio streams (master audio with speaking voice + mixed BGM)
             audio_formats = [
                 f for f in formats
                 if f.get('url') and (
@@ -593,24 +596,27 @@ def extract_via_ytdlp(url: str, cookie_string: str = None) -> dict:
             }
             register_media_meta(shortcode, res)
             return res
-    except Exception as e:
-        err_text = str(e)
-        if "login" in err_text.lower() or "empty media response" in err_text.lower():
-            msg = "This Instagram video is restricted or from a private account. Please add your session cookie in Settings to download."
-        else:
-            msg = f"Failed to extract video: {err_text.splitlines()[-1] if err_text else 'Unknown error'}"
+        except Exception as e:
+            last_error = e
+            continue
+        finally:
+            if cookie_temp_file and os.path.exists(cookie_temp_file):
+                try:
+                    os.remove(cookie_temp_file)
+                except OSError:
+                    pass
 
-        return {
-            "success": False,
-            "message": msg,
-            "error_detail": err_text
-        }
-    finally:
-        if cookie_temp_file and os.path.exists(cookie_temp_file):
-            try:
-                os.remove(cookie_temp_file)
-            except OSError:
-                pass
+    err_text = str(last_error) if last_error else "Unknown error"
+    if "login" in err_text.lower() or "empty media response" in err_text.lower():
+        msg = "This Instagram video is restricted or from a private account. Please add your session cookie in Settings to download."
+    else:
+        msg = f"Failed to extract video: {err_text.splitlines()[-1] if err_text else 'Unknown error'}"
+
+    return {
+        "success": False,
+        "message": msg,
+        "error_detail": err_text
+    }
 
 
 def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
