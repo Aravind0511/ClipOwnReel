@@ -204,13 +204,9 @@ def extract_via_direct_api(url: str, cookie_string: str = None) -> dict:
                     hd_width = versions[0].get('width') or 720
                     hd_height = versions[0].get('height') or 1280
 
-                clips = item.get('clips_metadata') or {}
-                music_info = clips.get('music_info') or {}
-                music_asset = music_info.get('music_asset_info') or {}
-                music_url = music_asset.get('fast_start_progressive_download_url') or music_asset.get('progressive_download_url')
-
-                best_audio_url = dash_audio_url or music_url or video_sd
-                separate_audio_url = dash_audio_url if (video_hd and video_hd != video_sd) else (music_url or video_sd)
+                # Clip audio must always match the exact Reel video length (never use full 4-5min album tracks)
+                best_audio_url = dash_audio_url or video_sd
+                separate_audio_url = dash_audio_url if (video_hd and video_hd != video_sd) else None
 
                 user = item.get('user', {})
                 author = user.get('username') or user.get('full_name') or 'instagram_user'

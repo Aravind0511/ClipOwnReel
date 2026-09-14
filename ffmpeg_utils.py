@@ -101,6 +101,7 @@ def mux_video_audio(video_url: str, audio_url: str) -> str:
         "-map", "1:a?",
         "-c:v", "copy",
         "-c:a", "aac",
+        "-shortest",
         "-movflags", "+faststart",
         out_file
     ]
@@ -124,6 +125,7 @@ def mux_video_audio(video_url: str, audio_url: str) -> str:
             "-map", "1:a?",
             "-c:v", "copy",
             "-c:a", "aac",
+            "-shortest",
             "-movflags", "+faststart",
             out_file
         ]

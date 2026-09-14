@@ -458,8 +458,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (previewVideo) {
             previewVideo.muted = false;
             previewVideo.volume = 1.0;
-            const videoSource = data.download_url_sd || data.download_url_hd || data.preview_url || data.direct_link;
-            const audioSource = data.download_url_audio || data.separate_audio_url;
+            const videoSource = data.preview_url || data.download_url_sd || data.download_url_hd || data.direct_link;
+            const audioSource = (videoSource === data.download_url_hd && data.separate_audio_url) ? data.separate_audio_url : null;
             let streamEndpoint = `/api/stream?url=${encodeURIComponent(videoSource)}`;
             if (audioSource) {
                 streamEndpoint += `&audio_url=${encodeURIComponent(audioSource)}`;

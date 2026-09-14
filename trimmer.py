@@ -100,6 +100,7 @@ def trim_media(
                     "-crf", "22",
                     "-c:a", "aac",
                     "-b:a", "192k",
+                    "-shortest",
                     "-movflags", "+faststart",
                     temp_output
                 ]
