@@ -1,22 +1,23 @@
-# ClipOwn - Modern Instagram Video & Reel Downloader ⚡
+# ClipOwn - Modern Instagram Video & Reel Downloader ⚡ (v1.0.0 Final Release)
 
-A high-performance, modern web application designed to download Instagram Reels, Videos, and Posts in crystal-clear High Definition. Built with a sleek dark glassmorphism interface, real-time clipboard integration, server-accelerated video streaming, and zero third-party ads.
+A high-performance, modern web application designed to download Instagram Reels, Videos, and Posts in crystal-clear High Definition. Built with a sleek dark glassmorphism interface, real-time clipboard integration, server-accelerated video streaming, precision clip trimmer, and zero third-party ads.
+
+🌐 **Live Production Application**: [https://instagram-reels-downloader-project.onrender.com](https://instagram-reels-downloader-project.onrender.com)
 
 ---
 
 ## 🌟 Key Features
 
-- **Modern Glassmorphic UI**: Cosmic dark theme (`#090a11`), Instagram radial gradient glow, and smooth animations.
+- **Modern Glassmorphic UI**: Cosmic dark theme (`#090a11`), Instagram radial gradient glow, Lucide icons, and smooth micro-interactions.
 - **1-Click Clipboard Paste**: Instant URL insertion using the modern Web Clipboard API (`navigator.clipboard`).
-- **Media Preview Card**: Displays creator avatar, username, video caption, duration, format, resolution, and estimated file size.
-- **Multiple Download Options**:
-  - **1080p Full HD Video** (MP4)
-  - **720p HD Video** (MP4)
-  - **MP3 Audio Extraction** (Audio-only track)
-- **Direct Browser Streaming**: Backend proxy streams files directly with `Content-Disposition: attachment` headers, bypassing CORS and avoiding external redirect ads.
-- **Instagram Authentication / Cookie Support**: Includes a built-in Settings Modal to configure an optional Instagram session cookie (`sessionid`) to unlock restricted or rate-limited videos.
-- **Interactive Sample Mode**: Includes a "Try sample Reel" button to immediately demo and test the full download pipeline.
-- **Responsive Design**: Flawless experience on desktop, tablet, iPhone (iOS Safari), and Android.
+- **Creator Voice + BGM Preservation**: Prioritizes Instagram's master rendered audio stream so spoken voice and synchronized background music are fully preserved.
+- **Precision Clip Trimmer**: Interactive dual-range slider with 0.5s precision, preset buttons (Full, First 15s, First 30s, Last 15s), live clip playback auditioning, and trimmed MP4/MP3 downloads.
+- **Full HD Video & Audio Muxing**: Automatic FFmpeg background muxing for 1080p/720p DASH video streams and high-bitrate (192kbps) MP3 extraction.
+- **Same-Origin Avatar Proxy**: Built-in `/api/proxy-image` route to load creator profile photos cleanly without CORS or referrer restrictions, backed by gradient SVG fallbacks.
+- **Direct Attachment Streaming**: Backend streams files directly with `Content-Disposition: attachment` headers, bypassing third-party redirection ads.
+- **Instagram Authentication Support**: Optional session cookie support (`INSTAGRAM_COOKIE` / Settings Modal) to reliably unlock private or age-restricted Reels.
+- **Interactive Sample Mode**: Includes a "Try sample Reel" button to immediately test the download pipeline.
+- **Fully Responsive**: Seamlessly optimized for desktop, tablet, iOS Safari, and Android.
 
 ---
 
