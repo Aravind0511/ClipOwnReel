@@ -9,6 +9,7 @@ import requests
 from fastapi import FastAPI, Query, HTTPException, Request, Response, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from extractor import extract_instagram_media, COOKIE_FILE_PATH, convert_to_netscape_content
 from trimmer import trim_media
@@ -25,6 +26,15 @@ app = FastAPI(
     title="ClipOwn API",
     description="Modern Instagram Video & Reel Downloader API",
     version="1.0.0"
+)
+
+# Enable CORS for all origins (supports GitHub Pages and custom domain deployments)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Mount static files directory
@@ -83,7 +93,7 @@ async def fetch_info(
                 pass
 
     # Basic Instagram URL validation
-    ig_pattern = r"(?:https?:\/\/)?(?:www\.)?(?:instagram\.com)\/(?:p|reel|tv|stories)\/([A-Za-z0-9_-]+)"
+    ig_pattern = r"(?:https?:\/\/)?(?:www\.)?(?:instagram\.com)\/(?:share\/)?(?:p|reels?|tv|stories)\/([A-Za-z0-9_-]+)"
     if not re.search(ig_pattern, clean_url) and "instagram.com" not in clean_url:
         return JSONResponse(
             status_code=400,

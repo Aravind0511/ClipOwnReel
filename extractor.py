@@ -85,10 +85,11 @@ def extract_via_direct_api(url: str, cookie_string: str = None) -> dict:
     Directly queries Instagram's authenticated media info API.
     Fast, reliable, and provides authentic DASH 1080p, dedicated AAC audio, and progressive streams.
     """
-    match = re.search(r"/(reel|p|tv|stories)/([A-Za-z0-9_-]+)", url.strip())
+    match = re.search(r"/(?:share/)?(reels?|p|tv|stories)/([A-Za-z0-9_-]+)", url.strip())
     if not match:
         return None
-    media_type, shortcode = match.group(1), match.group(2)
+    raw_type, shortcode = match.group(1), match.group(2)
+    media_type = 'reel' if raw_type.startswith('reel') else raw_type
     media_id = shortcode_to_media_id(shortcode)
 
     raw_cookie = ""
@@ -275,9 +276,10 @@ def clean_instagram_url(url: str) -> str:
     e.g. https://www.instagram.com/reel/Dcp3JkzJTA6/?utm_source=... -> https://www.instagram.com/reel/Dcp3JkzJTA6/
     """
     clean = url.strip()
-    match = re.search(r"/(reel|p|tv|stories)/([A-Za-z0-9_-]+)", clean)
+    match = re.search(r"/(?:share/)?(reels?|p|tv|stories)/([A-Za-z0-9_-]+)", clean)
     if match:
-        media_type = match.group(1)
+        raw_type = match.group(1)
+        media_type = 'reel' if raw_type.startswith('reel') else raw_type
         shortcode = match.group(2)
         return f"https://www.instagram.com/{media_type}/{shortcode}/", shortcode
     # Fallback to stripping query params

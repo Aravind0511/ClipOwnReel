@@ -191,7 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --------------------------------------------------------------------------
     function isInstagramUrl(url) {
         if (!url) return false;
-        const igRegex = /(?:https?:\/\/)?(?:www\.)?(?:instagram\.com)\/(?:p|reel|tv|stories)\/([A-Za-z0-9_-]+)/i;
+        const igRegex = /(?:https?:\/\/)?(?:www\.)?(?:instagram\.com)\/(?:share\/)?(?:p|reels?|tv|stories)\/([A-Za-z0-9_-]+)/i;
         return igRegex.test(url) || url.includes('instagram.com');
     }
 
@@ -793,7 +793,7 @@ document.addEventListener('DOMContentLoaded', () => {
         saveCookieBtn.addEventListener('click', async () => {
             const cookieVal = cookieInput ? cookieInput.value.trim() : '';
             try {
-                const res = await fetch('/api/settings/cookie', {
+                const res = await fetch(getEndpointUrl('/api/settings/cookie'), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ cookie: cookieVal })
@@ -819,7 +819,7 @@ document.addEventListener('DOMContentLoaded', () => {
         clearCookieBtn.addEventListener('click', async () => {
             if (cookieInput) cookieInput.value = '';
             localStorage.removeItem('clipown_ig_cookie');
-            await fetch('/api/settings/cookie', {
+            await fetch(getEndpointUrl('/api/settings/cookie'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ cookie: '' })
