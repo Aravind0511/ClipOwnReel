@@ -219,35 +219,78 @@ def extract_via_direct_api(url: str, cookie_string: str = None) -> dict:
                 manifest = item.get('video_dash_manifest', '')
                 if manifest:
                     try:
-                        root = ET.fromstring(manifest)
-                        dash_v = []
-                        dash_a = []
-                        for rep in root.iter():
-                            if not rep.tag.endswith('Representation'):
-                                continue
-                            rep_id = rep.attrib.get('id', '')
-                            mime = rep.attrib.get('mimeType', '')
-                            w = int(rep.attrib.get('width', 0) or 0)
-                            h = int(rep.attrib.get('height', 0) or 0)
-                            bw = int(rep.attrib.get('bandwidth', 0) or 0)
-                            for b_elem in rep.iter():
-                                if b_elem.tag.endswith('BaseURL') and b_elem.text:
-                                    u = b_elem.text.strip()
-                                    if 'audio' in mime.lower() or rep_id.endswith('a'):
-                                        dash_a.append((bw, u))
-                                    else:
-                                        dash_v.append((w, h, u))
-                                    break
-                        if dash_v:
-                            dash_v.sort(key=lambda x: (x[1], x[0]))
-                            hd_width = dash_v[-1][0] or 1080
-                            hd_height = dash_v[-1][1] or 1920
-                            video_hd = dash_v[-1][2]
-                        if dash_a:
-                            dash_a.sort(key=lambda x: x[0])
-                            dash_audio_url = dash_a[-1][1]
+                        # 1. First attempt: yt-dlp's native, comprehensive MPD parser
+                        ydl_inst = yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True})
+                        ie = yt_dlp.extractor.common.InfoExtractor(ydl_inst)
+                        mpd_doc = ie._parse_xml(manifest, shortcode)
+                        dash_formats = ie._parse_mpd_formats(mpd_doc, mpd_id='dash')
+                        
+                        dash_a_list = [
+                            f for f in dash_formats
+                            if f.get('vcodec') == 'none'
+                            or 'audio' in (f.get('format_note') or '').lower()
+                            or f.get('ext') in ['m4a', 'aac']
+                            or (f.get('acodec') and f.get('acodec') != 'none')
+                        ]
+                        dash_v_list = [
+                            f for f in dash_formats
+                            if (f.get('height') or 0) > 0
+                            or 'video' in (f.get('format_note') or '').lower()
+                        ]
+                        
+                        if dash_v_list:
+                            dash_v_list.sort(key=lambda x: (x.get('height') or 0, x.get('tbr') or 0))
+                            hd_width = dash_v_list[-1].get('width') or 1080
+                            hd_height = dash_v_list[-1].get('height') or 1920
+                            video_hd = dash_v_list[-1].get('url')
+                            
+                        if dash_a_list:
+                            dash_a_list.sort(key=lambda x: (x.get('tbr') or 0, x.get('abr') or 0))
+                            dash_audio_url = dash_a_list[-1].get('url')
                     except Exception:
                         pass
+
+                    # 2. Robust XML Fallback if yt-dlp parser did not find dash_audio_url
+                    if not dash_audio_url or not video_hd:
+                        try:
+                            root = ET.fromstring(manifest)
+                            dash_v = []
+                            dash_a = []
+                            for rep in root.iter():
+                                if not rep.tag.endswith('Representation'):
+                                    continue
+                                rep_id = rep.attrib.get('id', '')
+                                mime = rep.attrib.get('mimeType', '')
+                                w = int(rep.attrib.get('width', 0) or 0)
+                                h = int(rep.attrib.get('height', 0) or 0)
+                                bw = int(rep.attrib.get('bandwidth', 0) or 0)
+                                for b_elem in rep.iter():
+                                    if b_elem.tag.endswith('BaseURL') and b_elem.text:
+                                        u = b_elem.text.strip()
+                                        is_audio = (
+                                            (w == 0 and h == 0)
+                                            or 'audio' in mime.lower()
+                                            or rep_id.endswith('a')
+                                            or 'audio' in u.lower()
+                                            or 'heaac' in u.lower()
+                                            or 'a.mp4' in u.lower()
+                                            or '.m4a' in u.lower()
+                                        )
+                                        if is_audio:
+                                            dash_a.append((bw, u))
+                                        else:
+                                            dash_v.append((w, h, u))
+                                        break
+                            if dash_v and not video_hd:
+                                dash_v.sort(key=lambda x: (x[1], x[0]))
+                                hd_width = dash_v[-1][0] or 1080
+                                hd_height = dash_v[-1][1] or 1920
+                                video_hd = dash_v[-1][2]
+                            if dash_a and not dash_audio_url:
+                                dash_a.sort(key=lambda x: x[0])
+                                dash_audio_url = dash_a[-1][1]
+                        except Exception:
+                            pass
 
                 versions = item.get('video_versions', [])
                 video_sd = versions[0].get('url') if versions else video_hd
