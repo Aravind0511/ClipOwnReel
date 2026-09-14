@@ -93,10 +93,11 @@ def trim_media(
                     ffmpeg_bin,
                     "-y",
                     "-ss", f"{start_time:.3f}",
+                    "-t", f"{duration:.3f}",
                     "-i", temp_input,
                     "-ss", f"{audio_seek:.3f}",
-                    "-i", temp_audio,
                     "-t", f"{duration:.3f}",
+                    "-i", temp_audio,
                     "-map", "0:v:0",
                     "-map", "1:a:0",
                     "-c:v", "libx264",
@@ -105,6 +106,7 @@ def trim_media(
                     "-c:a", "aac",
                     "-b:a", "192k",
                     "-shortest",
+                    "-t", f"{duration:.3f}",
                     "-movflags", "+faststart",
                     temp_output
                 ]
@@ -114,8 +116,8 @@ def trim_media(
                     ffmpeg_bin,
                     "-y",
                     "-ss", f"{start_time:.3f}",
-                    "-i", temp_input,
                     "-t", f"{duration:.3f}",
+                    "-i", temp_input,
                     "-map", "0:v:0",
                     "-map", "0:a?",
                     "-c:v", "libx264",
@@ -123,6 +125,7 @@ def trim_media(
                     "-crf", "22",
                     "-c:a", "aac",
                     "-b:a", "192k",
+                    "-t", f"{duration:.3f}",
                     "-movflags", "+faststart",
                     temp_output
                 ]
@@ -135,11 +138,12 @@ def trim_media(
                 ffmpeg_bin,
                 "-y",
                 "-ss", f"{audio_seek:.3f}",
-                "-i", temp_input,
                 "-t", f"{duration:.3f}",
+                "-i", temp_input,
                 "-vn",
                 "-c:a", "libmp3lame",
                 "-b:a", "192k",
+                "-t", f"{duration:.3f}",
                 temp_output
             ]
 

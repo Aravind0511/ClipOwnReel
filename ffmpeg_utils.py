@@ -99,9 +99,9 @@ def mux_video_audio(video_url: str, audio_url: str, audio_start: float = 0.0, du
     ]
     if audio_start and float(audio_start) > 0:
         cmd.extend(["-ss", f"{float(audio_start):.3f}"])
-    cmd.extend(["-i", audio_url])
     if duration and float(duration) > 0:
         cmd.extend(["-t", f"{float(duration):.3f}"])
+    cmd.extend(["-i", audio_url])
     cmd.extend([
         "-map", "0:v:0",
         "-map", "1:a:0",
@@ -109,8 +109,10 @@ def mux_video_audio(video_url: str, audio_url: str, audio_start: float = 0.0, du
         "-c:a", "aac",
         "-shortest",
         "-movflags", "+faststart",
-        out_file
     ])
+    if duration and float(duration) > 0:
+        cmd.extend(["-t", f"{float(duration):.3f}"])
+    cmd.append(out_file)
     res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if res.returncode == 0 and os.path.exists(out_file) and os.path.getsize(out_file) > 1000:
         return out_file
@@ -129,9 +131,9 @@ def mux_video_audio(video_url: str, audio_url: str, audio_start: float = 0.0, du
         ]
         if audio_start and float(audio_start) > 0:
             fallback_cmd.extend(["-ss", f"{float(audio_start):.3f}"])
-        fallback_cmd.extend(["-i", temp_a])
         if duration and float(duration) > 0:
             fallback_cmd.extend(["-t", f"{float(duration):.3f}"])
+        fallback_cmd.extend(["-i", temp_a])
         fallback_cmd.extend([
             "-map", "0:v:0",
             "-map", "1:a:0",
@@ -139,8 +141,10 @@ def mux_video_audio(video_url: str, audio_url: str, audio_start: float = 0.0, du
             "-c:a", "aac",
             "-shortest",
             "-movflags", "+faststart",
-            out_file
         ])
+        if duration and float(duration) > 0:
+            fallback_cmd.extend(["-t", f"{float(duration):.3f}"])
+        fallback_cmd.append(out_file)
         res_fb = subprocess.run(fallback_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if res_fb.returncode != 0 or not os.path.exists(out_file) or os.path.getsize(out_file) == 0:
             err = res_fb.stderr if res_fb.stderr else 'Mux error'
@@ -177,15 +181,17 @@ def extract_mp3_audio(source_url: str, start_time: float = 0.0, duration: float 
     ]
     if start_time and float(start_time) > 0:
         cmd.extend(["-ss", f"{float(start_time):.3f}"])
-    cmd.extend(["-i", source_url])
     if duration and float(duration) > 0:
         cmd.extend(["-t", f"{float(duration):.3f}"])
+    cmd.extend(["-i", source_url])
     cmd.extend([
         "-vn",
         "-c:a", "libmp3lame",
         "-b:a", "192k",
-        out_file
     ])
+    if duration and float(duration) > 0:
+        cmd.extend(["-t", f"{float(duration):.3f}"])
+    cmd.append(out_file)
     res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if res.returncode == 0 and os.path.exists(out_file) and os.path.getsize(out_file) > 1000:
         return out_file
@@ -200,15 +206,17 @@ def extract_mp3_audio(source_url: str, start_time: float = 0.0, duration: float 
         ]
         if start_time and float(start_time) > 0:
             fallback_cmd.extend(["-ss", f"{float(start_time):.3f}"])
-        fallback_cmd.extend(["-i", temp_src])
         if duration and float(duration) > 0:
             fallback_cmd.extend(["-t", f"{float(duration):.3f}"])
+        fallback_cmd.extend(["-i", temp_src])
         fallback_cmd.extend([
             "-vn",
             "-c:a", "libmp3lame",
             "-b:a", "192k",
-            out_file
         ])
+        if duration and float(duration) > 0:
+            fallback_cmd.extend(["-t", f"{float(duration):.3f}"])
+        fallback_cmd.append(out_file)
         res_fb = subprocess.run(fallback_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if res_fb.returncode != 0 or not os.path.exists(out_file) or os.path.getsize(out_file) == 0:
             err = res_fb.stderr if res_fb.stderr else 'Extract error'

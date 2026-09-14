@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, Fil
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from extractor import extract_instagram_media, COOKIE_FILE_PATH, convert_to_netscape_content
+from extractor import extract_instagram_media, COOKIE_FILE_PATH, convert_to_netscape_content, get_media_meta
 from trimmer import trim_media
 from ffmpeg_utils import ensure_ffmpeg, mux_video_audio, extract_mp3_audio, NoAudioStreamError
 
@@ -56,7 +56,7 @@ class CookiePayload(BaseModel):
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
-    """Serve the modern single-page web app."""
+    """Serve the modern single-page web app with anti-cache headers."""
     index_file = os.path.join(BASE_DIR, "index.html")
     if not os.path.exists(index_file):
         index_file = os.path.join(TEMPLATES_DIR, "index.html")
@@ -64,7 +64,14 @@ async def read_root():
         raise HTTPException(status_code=404, detail="Index template not found")
     with open(index_file, "r", encoding="utf-8") as f:
         content = f.read()
-    return HTMLResponse(content=content)
+    return HTMLResponse(
+        content=content,
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
 
 @app.get("/api/fetch-info")
 async def fetch_info(
@@ -115,19 +122,41 @@ async def download_media(
     audio_url: str = Query(None, description="Optional separate audio stream URL to mux"),
     media_type: str = Query("video", description="Download format type: video or audio"),
     audio_start: float = Query(0.0, description="Optional audio start offset in seconds"),
-    duration: float = Query(None, description="Optional clip duration in seconds")
+    duration: float = Query(None, description="Optional clip duration in seconds"),
+    shortcode: str = Query(None, description="Optional Instagram shortcode or identifier to auto-resolve clip metadata")
 ):
     """
     Stream or transcode video/audio file directly to client with forced attachment header.
     Automatically muxes DASH video + audio streams, and converts audio streams to authentic MP3.
+    Enforces exact clip offset and duration boundaries.
     """
     clean_url = url.strip()
     if not clean_url or clean_url == "#":
         raise HTTPException(status_code=400, detail="Invalid media download URL.")
 
+    # Auto-resolve clip duration, offset, and separate audio stream from server registry
+    meta = get_media_meta(shortcode) or get_media_meta(clean_url) or {}
+    if (audio_start is None or float(audio_start) == 0.0) and meta.get('audio_start_offset'):
+        try:
+            audio_start = float(meta['audio_start_offset'])
+        except (ValueError, TypeError):
+            pass
+
+    if (duration is None or float(duration) <= 0.0) and meta.get('duration_seconds'):
+        try:
+            duration = float(meta['duration_seconds'])
+        except (ValueError, TypeError):
+            pass
+
+    if (not audio_url or audio_url.lower() in ["none", "null", "undefined"]) and meta.get('separate_audio_url'):
+        audio_url = meta['separate_audio_url']
+
     # 1. Audio Download Request (extract authentic MP3)
     if media_type.lower() == "audio" or filename.lower().endswith(".mp3"):
-        if not clean_url or clean_url.lower() in ["none", "null", "undefined", "#"]:
+        target_audio = clean_url
+        if (not target_audio or target_audio.lower() in ["none", "null", "undefined", "#"]) and meta.get('download_url_audio'):
+            target_audio = meta['download_url_audio']
+        if not target_audio or target_audio.lower() in ["none", "null", "undefined", "#"]:
             raise HTTPException(
                 status_code=400,
                 detail="Instagram restricted the audio stream for this Reel on guest cloud requests. Please add your Instagram session cookie in Settings to download audio."
@@ -136,7 +165,7 @@ async def download_media(
         if not safe_filename.endswith(".mp3"):
             safe_filename += ".mp3"
         try:
-            mp3_path = extract_mp3_audio(clean_url, start_time=audio_start, duration=duration)
+            mp3_path = extract_mp3_audio(target_audio, start_time=audio_start, duration=duration)
             background_tasks.add_task(os.remove, mp3_path)
             return FileResponse(
                 mp3_path,
@@ -227,7 +256,8 @@ async def stream_media_for_preview(
     url: str = Query(..., description="Direct media URL to stream"),
     audio_url: str = Query(None, description="Optional audio stream URL to mux for synchronized preview sound"),
     audio_start: float = Query(0.0, description="Optional audio start offset in seconds"),
-    duration: float = Query(None, description="Optional clip duration in seconds")
+    duration: float = Query(None, description="Optional clip duration in seconds"),
+    shortcode: str = Query(None, description="Optional Instagram shortcode or identifier to auto-resolve clip metadata")
 ):
     """
     Proxy video streams with Range request support for smooth browser video preview & scrubbing.
@@ -240,6 +270,23 @@ async def stream_media_for_preview(
 
     if os.path.exists(clean_url):
         return FileResponse(clean_url, media_type="video/mp4", headers={"Access-Control-Allow-Origin": "*"})
+
+    # Auto-resolve clip duration, offset, and separate audio stream from server registry
+    meta = get_media_meta(shortcode) or get_media_meta(clean_url) or {}
+    if (audio_start is None or float(audio_start) == 0.0) and meta.get('audio_start_offset'):
+        try:
+            audio_start = float(meta['audio_start_offset'])
+        except (ValueError, TypeError):
+            pass
+
+    if (duration is None or float(duration) <= 0.0) and meta.get('duration_seconds'):
+        try:
+            duration = float(meta['duration_seconds'])
+        except (ValueError, TypeError):
+            pass
+
+    if (not audio_url or audio_url.lower() in ["none", "null", "undefined"]) and meta.get('separate_audio_url'):
+        audio_url = meta['separate_audio_url']
 
     # Check if audio stream should be muxed for synchronized preview sound
     valid_audio = audio_url.strip() if (isinstance(audio_url, str) and audio_url.strip()) else None
@@ -309,7 +356,8 @@ async def trim_download_media(
     media_type: str = Query("video", description="Trim output format: video or audio"),
     filename: str = Query("clipown_trimmed.mp4", description="Output filename"),
     audio_url: str = Query(None, description="Optional separate audio stream URL for DASH streams"),
-    audio_start_offset: float = Query(0.0, description="Optional audio start offset in seconds for music tracks")
+    audio_start_offset: float = Query(0.0, description="Optional audio start offset in seconds for music tracks"),
+    shortcode: str = Query(None, description="Optional Instagram shortcode or identifier to auto-resolve clip metadata")
 ):
     """
     Trims video or audio using FFmpeg and streams the cut file directly to the client.
@@ -322,6 +370,17 @@ async def trim_download_media(
 
     if start < 0 or end <= start:
         raise HTTPException(status_code=400, detail="Invalid start/end trim timestamps. End must be greater than start.")
+
+    # Auto-resolve clip offset and separate audio stream from server registry
+    meta = get_media_meta(shortcode) or get_media_meta(clean_url) or {}
+    if (audio_start_offset is None or float(audio_start_offset) == 0.0) and meta.get('audio_start_offset'):
+        try:
+            audio_start_offset = float(meta['audio_start_offset'])
+        except (ValueError, TypeError):
+            pass
+
+    if (not audio_url or audio_url.lower() in ["none", "null", "undefined"]) and meta.get('separate_audio_url'):
+        audio_url = meta['separate_audio_url']
 
     valid_audio = audio_url.strip() if (isinstance(audio_url, str) and audio_url.strip()) else None
 

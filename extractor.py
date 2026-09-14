@@ -15,6 +15,48 @@ from ffmpeg_utils import ensure_ffmpeg
 
 COOKIE_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.txt")
 
+# Global media metadata registry to auto-resolve clip offset and duration
+MEDIA_REGISTRY = {}
+
+def register_media_meta(shortcode: str, data: dict):
+    """Registers media metadata so download, stream, and trim endpoints auto-resolve clip duration and offset."""
+    if not data or not isinstance(data, dict):
+        return
+    sc = shortcode or data.get('shortcode') or ''
+    meta = {
+        'shortcode': sc,
+        'audio_start_offset': float(data.get('audio_start_offset') or 0.0),
+        'duration_seconds': float(data.get('duration_seconds') or 30.0),
+        'download_url_audio': data.get('download_url_audio'),
+        'download_url_hd': data.get('download_url_hd'),
+        'download_url_sd': data.get('download_url_sd'),
+        'separate_audio_url': data.get('separate_audio_url'),
+    }
+    if sc:
+        MEDIA_REGISTRY[sc] = meta
+    for key in ['download_url_audio', 'download_url_hd', 'download_url_sd', 'separate_audio_url']:
+        u = data.get(key)
+        if u and isinstance(u, str) and len(u) > 10:
+            MEDIA_REGISTRY[u] = meta
+            p = u.split('?')[0]
+            if p:
+                MEDIA_REGISTRY[p] = meta
+
+def get_media_meta(identifier: str) -> dict:
+    """Auto-resolves audio_start_offset, duration, and audio stream for a shortcode or media URL."""
+    if not identifier:
+        return {}
+    clean_id = identifier.strip()
+    if clean_id in MEDIA_REGISTRY:
+        return MEDIA_REGISTRY[clean_id]
+    p = clean_id.split('?')[0]
+    if p in MEDIA_REGISTRY:
+        return MEDIA_REGISTRY[p]
+    for k, v in MEDIA_REGISTRY.items():
+        if k and len(k) > 15 and (k in clean_id or clean_id in k):
+            return v
+    return {}
+
 def convert_to_netscape_content(cookie_str: str) -> str:
     """
     Converts a raw cookie string, key-value pairs, or raw sessionid into standard Netscape format.
@@ -213,19 +255,34 @@ def extract_via_direct_api(url: str, cookie_string: str = None) -> dict:
                 music_consumption = music_info.get('music_consumption_info') or {}
                 music_url = music_asset.get('fast_start_progressive_download_url') or music_asset.get('progressive_download_url')
                 start_ms = music_consumption.get('audio_asset_start_time_in_ms', 0) or 0
+
+                # Also check original_sound_info for audio asset start time or stream URL
+                orig_sound = clips.get('original_sound_info') or {}
+                orig_consumption = orig_sound.get('consumption_info') or {}
+                if not start_ms:
+                    start_ms = (
+                        orig_sound.get('audio_asset_start_time_in_ms')
+                        or orig_consumption.get('audio_asset_start_time_in_ms')
+                        or orig_sound.get('start_time_in_ms')
+                        or 0
+                    )
+                if not music_url:
+                    music_url = orig_sound.get('progressive_download_url')
+
                 audio_start_offset = round(float(start_ms) / 1000.0, 3) if start_ms else 0.0
 
-                if dash_audio_url:
+                if music_url and start_ms:
+                    best_audio_url = music_url
+                    separate_audio_url = music_url
+                elif dash_audio_url:
                     best_audio_url = dash_audio_url
                     separate_audio_url = dash_audio_url if (video_hd and video_hd != video_sd) else None
-                    audio_start_offset = 0.0
                 elif music_url:
                     best_audio_url = music_url
                     separate_audio_url = music_url
                 else:
                     best_audio_url = video_sd
                     separate_audio_url = None
-                    audio_start_offset = 0.0
 
                 user = item.get('user', {})
                 author = user.get('username') or user.get('full_name') or 'instagram_user'
@@ -241,7 +298,7 @@ def extract_via_direct_api(url: str, cookie_string: str = None) -> dict:
                 raw_duration = float(item.get('video_duration', 30.0) or 30.0)
                 duration = format_duration(raw_duration)
 
-                return {
+                res = {
                     'success': True,
                     'is_mock': False,
                     'shortcode': shortcode,
@@ -266,6 +323,8 @@ def extract_via_direct_api(url: str, cookie_string: str = None) -> dict:
                     'direct_link': f'https://www.instagram.com/{media_type}/{shortcode}/',
                     'source': 'instagram_direct_api'
                 }
+                register_media_meta(shortcode, res)
+                return res
         except Exception:
             continue
     return None
@@ -478,7 +537,7 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
             resolution = f"{hd_width} x {hd_height}"
             size = format_filesize(info.get('filesize') or info.get('filesize_approx'))
 
-            return {
+            res = {
                 "success": True,
                 "is_mock": False,
                 "shortcode": shortcode,
@@ -503,6 +562,8 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
                 "direct_link": normalized_url,
                 "source": "instagram_live"
             }
+            register_media_meta(shortcode, res)
+            return res
     except Exception as e:
         err_text = str(e)
         if "login" in err_text.lower() or "empty media response" in err_text.lower():

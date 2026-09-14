@@ -353,7 +353,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btnDownloadHD.addEventListener('click', () => {
         if (!currentMedia) return;
         showToast('Initiating 1080p HD Video download (with synchronized audio)...', 'success');
-        let downloadPath = `/api/download?url=${encodeURIComponent(currentMedia.download_url_hd || currentMedia.direct_link)}&filename=clipown_1080p_${currentMedia.shortcode || 'video'}.mp4&media_type=video`;
+        let downloadPath = `/api/download?url=${encodeURIComponent(currentMedia.download_url_hd || currentMedia.direct_link)}&filename=clipown_1080p_${currentMedia.shortcode || 'video'}.mp4&media_type=video&shortcode=${encodeURIComponent(currentMedia.shortcode || '')}`;
         const audioToUse = currentMedia.download_url_audio || currentMedia.separate_audio_url;
         if (audioToUse) {
             downloadPath += `&audio_url=${encodeURIComponent(audioToUse)}`;
@@ -370,7 +370,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btnDownloadSD.addEventListener('click', () => {
         if (!currentMedia) return;
         showToast('Initiating 720p Video download (with synchronized audio)...', 'success');
-        let downloadPath = `/api/download?url=${encodeURIComponent(currentMedia.download_url_sd || currentMedia.direct_link)}&filename=clipown_720p_${currentMedia.shortcode || 'video'}.mp4&media_type=video`;
+        let downloadPath = `/api/download?url=${encodeURIComponent(currentMedia.download_url_sd || currentMedia.direct_link)}&filename=clipown_720p_${currentMedia.shortcode || 'video'}.mp4&media_type=video&shortcode=${encodeURIComponent(currentMedia.shortcode || '')}`;
         const audioToUse = currentMedia.download_url_audio || currentMedia.separate_audio_url;
         if (audioToUse) {
             downloadPath += `&audio_url=${encodeURIComponent(audioToUse)}`;
@@ -393,7 +393,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         showToast('Initiating MP3 Audio download (converting with FFmpeg)...', 'success');
         const audioSrc = currentMedia.download_url_audio || currentMedia.preview_url || currentMedia.download_url_sd || currentMedia.separate_audio_url || currentMedia.direct_link;
-        let downloadPath = `/api/download?url=${encodeURIComponent(audioSrc)}&filename=clipown_audio_${currentMedia.shortcode || 'audio'}.mp3&media_type=audio`;
+        let downloadPath = `/api/download?url=${encodeURIComponent(audioSrc)}&filename=clipown_audio_${currentMedia.shortcode || 'audio'}.mp3&media_type=audio&shortcode=${encodeURIComponent(currentMedia.shortcode || '')}`;
         if (currentMedia.audio_start_offset != null) {
             downloadPath += `&audio_start=${encodeURIComponent(currentMedia.audio_start_offset)}`;
         }
@@ -478,7 +478,7 @@ document.addEventListener('DOMContentLoaded', () => {
             previewVideo.volume = 1.0;
             const videoSource = data.preview_url || data.download_url_sd || data.download_url_hd || data.direct_link;
             const audioSource = data.separate_audio_url || null;
-            let streamEndpoint = `/api/stream?url=${encodeURIComponent(videoSource)}`;
+            let streamEndpoint = `/api/stream?url=${encodeURIComponent(videoSource)}&shortcode=${encodeURIComponent(data.shortcode || '')}`;
             if (audioSource) {
                 streamEndpoint += `&audio_url=${encodeURIComponent(audioSource)}`;
             }
@@ -728,7 +728,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (loader) loader.classList.remove('hidden');
         showToast(`Preparing ${label}... Cutting with synchronized sound!`, 'info', 4000);
 
-        let trimDownloadPath = `/api/trim-download?url=${encodeURIComponent(sourceUrl)}&start=${start}&end=${end}&media_type=${mediaType}&filename=${encodeURIComponent(filename)}`;
+        let trimDownloadPath = `/api/trim-download?url=${encodeURIComponent(sourceUrl)}&start=${start}&end=${end}&media_type=${mediaType}&filename=${encodeURIComponent(filename)}&shortcode=${encodeURIComponent(currentMedia.shortcode || '')}`;
         const audioSource = currentMedia.download_url_audio || currentMedia.separate_audio_url;
         if (audioSource) {
             trimDownloadPath += `&audio_url=${encodeURIComponent(audioSource)}`;
