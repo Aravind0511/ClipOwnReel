@@ -563,6 +563,21 @@ async def system_diag(url: str = Query("https://www.instagram.com/reel/DbUlcPTTb
     except Exception as e:
         formats_summary = f"Error: {str(e)}"
 
+    formats_no_cookie = []
+    try:
+        with yt_dlp.YoutubeDL({'quiet': True, 'skip_download': True, 'no_warnings': True}) as ydl_nc:
+            info_nc = ydl_nc.extract_info(url, download=False)
+            formats_no_cookie = [{
+                'id': f.get('format_id'),
+                'ext': f.get('ext'),
+                'vcodec': f.get('vcodec'),
+                'acodec': f.get('acodec'),
+                'format_note': f.get('format_note'),
+                'url_snippet': f.get('url', '').split('?')[0][-35:] if f.get('url') else None
+            } for f in info_nc.get('formats', [])]
+    except Exception as e:
+        formats_no_cookie = f"Error: {str(e)}"
+
     cookie_status = "Not configured"
     if os.path.exists(COOKIE_FILE_PATH):
         try:
@@ -637,9 +652,9 @@ async def system_diag(url: str = Query("https://www.instagram.com/reel/DbUlcPTTb
         "ffmpeg_version": ffmpeg_ver,
         "manifest_len": manifest_len,
         "has_audio_in_manifest": has_audio_in_manifest,
-        "manifest_snippet": raw_manifest[:300] if raw_manifest else None,
         "formats_count": len(formats_summary) if isinstance(formats_summary, list) else 0,
-        "formats": formats_summary
+        "formats": formats_summary,
+        "formats_no_cookie": formats_no_cookie
     }
 
 if __name__ == "__main__":

@@ -471,7 +471,7 @@ def extract_via_ytdlp(url: str, cookie_string: str = None) -> dict:
 
                 formats = info.get('formats', [])
 
-                # 1. Dedicated audio streams (master audio with speaking voice + mixed BGM)
+            # 1. Dedicated audio streams (master audio with speaking voice + mixed BGM)
             audio_formats = [
                 f for f in formats
                 if f.get('url') and (
@@ -482,14 +482,22 @@ def extract_via_ytdlp(url: str, cookie_string: str = None) -> dict:
             if audio_formats:
                 audio_formats.sort(key=lambda x: (x.get('tbr') or 0, x.get('abr') or 0))
 
-            # 2. Progressive streams (contains both video and audio in single MP4)
+            # 2. Progressive streams that ACTUALLY contain audio
+            progressive_audio_formats = [
+                f for f in formats
+                if f.get('url') and (
+                    (f.get('vcodec') and f.get('vcodec') != 'none' and f.get('acodec') and f.get('acodec') != 'none')
+                    or (str(f.get('format_id', '')) in ['0', '1', '2', '3'] and f.get('acodec') not in ['none', None])
+                )
+            ]
+
+            # Progressive video streams (can be video-only or muxed)
             progressive_formats = [
                 f for f in formats
                 if f.get('url') and (
                     str(f.get('format_id', '')) in ['0', '1', '2', '3']
                     or 'progressive' in f.get('url', '').lower()
                     or (f.get('format_note') != 'DASH video' and not str(f.get('format_id', '')).endswith(('v', 'a')))
-                    or (f.get('vcodec') and f.get('vcodec') != 'none' and f.get('acodec') and f.get('acodec') != 'none')
                 )
             ]
 
@@ -512,14 +520,17 @@ def extract_via_ytdlp(url: str, cookie_string: str = None) -> dict:
             ]
 
             # Determine best audio URL:
-            # If dedicated master audio stream exists -> use it (contains voice + BGM!)
-            # Else if progressive format exists -> use progressive stream URL (contains AAC audio!)
+            # Dedicated master audio stream (contains voice + BGM!) is highest priority!
             if audio_formats:
                 best_audio_url = audio_formats[-1]['url']
-            elif progressive_formats:
-                best_audio_url = progressive_formats[-1]['url']
+            elif progressive_audio_formats:
+                best_audio_url = progressive_audio_formats[-1]['url']
             else:
                 best_audio_url = None
+
+            # If pass 1 (unauthenticated) produced no audio streams, retry with cookies if available
+            if not best_audio_url and cookie_try is None and len(cookie_attempts) > 1:
+                continue
 
             has_audio = (best_audio_url is not None)
 
@@ -653,9 +664,16 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
     # with the creator's speaking voice + synchronized BGM!
     yt_res = extract_via_ytdlp(normalized_url, effective_cookie)
     if yt_res and yt_res.get('success') and yt_res.get('has_audio'):
-        # If direct_res had the authentic creator avatar URL, attach it to yt_res
-        if direct_res and direct_res.get('author_avatar') and direct_res['author_avatar'].startswith('http'):
-            yt_res['author_avatar'] = direct_res['author_avatar']
+        # If direct_res had authentic metadata (HD avatar, real username, exact duration), attach to yt_res
+        if direct_res and direct_res.get('success'):
+            if direct_res.get('author_avatar') and direct_res['author_avatar'].startswith('http'):
+                yt_res['author_avatar'] = direct_res['author_avatar']
+            if direct_res.get('duration_seconds') and direct_res['duration_seconds'] > 0:
+                yt_res['duration_seconds'] = direct_res['duration_seconds']
+                if direct_res.get('duration'):
+                    yt_res['duration'] = direct_res['duration']
+            if direct_res.get('author') and direct_res['author'] != 'instagram_user':
+                yt_res['author'] = direct_res['author']
         register_media_meta(shortcode, yt_res)
         return yt_res
 

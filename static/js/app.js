@@ -512,6 +512,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 streamEndpoint += `&duration=${encodeURIComponent(data.duration_seconds)}`;
             }
             previewVideo.src = getEndpointUrl(streamEndpoint);
+            previewVideo.onloadedmetadata = () => {
+                if (previewVideo.duration && isFinite(previewVideo.duration) && previewVideo.duration > 1) {
+                    const accurateDur = Math.round(previewVideo.duration * 10) / 10;
+                    if (!currentMedia.duration_seconds || Math.abs(currentMedia.duration_seconds - accurateDur) > 1.5) {
+                        currentMedia.duration_seconds = accurateDur;
+                        if (trimStartRange && trimEndRange) {
+                            trimStartRange.max = accurateDur.toString();
+                            trimEndRange.max = accurateDur.toString();
+                            if (parseFloat(trimEndRange.value) > accurateDur || trimEndRange.value === '30') {
+                                trimEndRange.value = accurateDur.toString();
+                            }
+                            updateTrimUI();
+                        }
+                        if (previewDuration) {
+                            previewDuration.textContent = formatSeconds(accurateDur);
+                        }
+                    }
+                }
+            };
             previewVideo.load();
             previewVideo.classList.add('hidden');
         }
