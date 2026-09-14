@@ -578,9 +578,12 @@ async def system_diag(url: str = Query("https://www.instagram.com/reel/DbUlcPTTb
 
     direct_api_diag = {}
     try:
-        from extractor import shortcode_to_media_id, extract_shortcode
-        sc = extract_shortcode(url)
-        mid = shortcode_to_media_id(sc)
+        import sys
+        if BASE_DIR not in sys.path:
+            sys.path.insert(0, BASE_DIR)
+        import extractor
+        sc = extractor.extract_shortcode(url)
+        mid = extractor.shortcode_to_media_id(sc)
         direct_api_diag['shortcode'] = sc
         direct_api_diag['media_id'] = mid
         cookies_map = {}
