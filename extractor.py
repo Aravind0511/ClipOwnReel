@@ -373,6 +373,7 @@ def extract_via_direct_api(url: str, cookie_string: str = None) -> dict:
                     'resolution': f'{hd_width} x {hd_height}',
                     'size': '~ 18.5 MB',
                     'has_audio': bool(best_audio_url),
+                    'dash_audio_url': dash_audio_url,
                     'auth_required': False,
                     'download_url_hd': video_hd,
                     'download_url_sd': video_sd,
@@ -426,15 +427,12 @@ def format_filesize(size_bytes) -> str:
     except (ValueError, TypeError):
         return "~ 15 MB"
 
-def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
+def extract_via_ytdlp(url: str, cookie_string: str = None) -> dict:
     """
-    Extracts authentic Instagram media information and direct CDN video stream URLs.
-    First attempts direct API extraction if an authenticated cookie is present,
-    then falls back to resilient yt-dlp extraction.
+    Extracts authentic Instagram media via yt-dlp by parsing the web DASH manifest.
+    This extracts the complete master audio stream containing the creator's speaking voice + synchronized BGM!
     """
     normalized_url, shortcode = clean_instagram_url(url)
-
-    # 1. First attempt: Direct authenticated Instagram API call
     effective_cookie = cookie_string
     if not effective_cookie and os.path.exists(COOKIE_FILE_PATH) and os.path.getsize(COOKIE_FILE_PATH) > 10:
         try:
@@ -443,15 +441,6 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
         except Exception:
             pass
 
-    if effective_cookie and len(effective_cookie.strip()) > 10:
-        try:
-            direct_res = extract_via_direct_api(normalized_url, effective_cookie)
-            if direct_res and direct_res.get('success') and direct_res.get('has_audio'):
-                return direct_res
-        except Exception as e:
-            print(f"Direct API extraction attempt skipped: {e}")
-
-    # 2. Second attempt: Resilient yt-dlp extraction
     ffmpeg_bin = ensure_ffmpeg()
     ydl_opts = {
         'quiet': True,
@@ -460,7 +449,6 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
         'ffmpeg_location': ffmpeg_bin,
     }
 
-    # Configure custom cookies if valid
     cookie_temp_file = None
     if effective_cookie and len(effective_cookie.strip()) > 10:
         cookie_temp_file = create_netscape_cookiefile(effective_cookie.strip())
@@ -480,7 +468,7 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
 
             formats = info.get('formats', [])
 
-            # 1. Dedicated audio streams
+            # 1. Dedicated audio streams (master audio with speaking voice + mixed BGM)
             audio_formats = [
                 f for f in formats
                 if f.get('url') and (
@@ -488,6 +476,8 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
                     or (f.get('vcodec') == 'none' and f.get('acodec') and f.get('acodec') != 'none')
                 )
             ]
+            if audio_formats:
+                audio_formats.sort(key=lambda x: (x.get('tbr') or 0, x.get('abr') or 0))
 
             # 2. Progressive streams (contains both video and audio in single MP4)
             progressive_formats = [
@@ -519,10 +509,10 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
             ]
 
             # Determine best audio URL:
-            # If dedicated audio stream exists -> use it
+            # If dedicated master audio stream exists -> use it (contains voice + BGM!)
             # Else if progressive format exists -> use progressive stream URL (contains AAC audio!)
             if audio_formats:
-                best_audio_url = audio_formats[0]['url']
+                best_audio_url = audio_formats[-1]['url']
             elif progressive_formats:
                 best_audio_url = progressive_formats[-1]['url']
             else:
@@ -556,42 +546,21 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
             # Determine SD video stream
             if progressive_formats:
                 video_sd = progressive_formats[0]['url']
-            elif any_video_formats:
-                video_sd = any_video_formats[0]['url']
+            elif dash_video_formats:
+                video_sd = dash_video_formats[0]['url']
             else:
                 video_sd = video_hd
 
-            # Preview Stream: MUST HAVE AUDIO IF AVAILABLE
-            preview_url = progressive_formats[-1]['url'] if progressive_formats else (video_sd if video_sd else video_hd)
+            preview_url = video_sd or video_hd
 
-            if not video_hd:
-                return {
-                    "success": False,
-                    "message": "Instagram returned metadata but no downloadable video stream was found. The post may only contain images."
-                }
+            title = info.get('title') or info.get('description') or f"Instagram Reel [{shortcode}]"
+            title = re.sub(r'[\r\n]+', ' ', title).strip()[:100]
 
-            # Extract accurate metadata
-            title = info.get('title') or info.get('description', '')[:100] or f"Instagram Reel [{shortcode}]"
-            author = info.get('uploader') or info.get('uploader_id') or info.get('channel') or "instagram_user"
-            thumbnail = info.get('thumbnail') or "https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=800&auto=format&fit=crop&q=80"
-            raw_duration = float(info.get('duration') or 0.0)
-            if raw_duration <= 0:
-                for f in info.get('formats', []):
-                    u = f.get('url', '')
-                    if 'efg=' in u:
-                        try:
-                            import base64, urllib.parse
-                            qs = urllib.parse.parse_qs(urllib.parse.urlparse(u).query)
-                            efg_b64 = qs.get('efg', [''])[0]
-                            if efg_b64:
-                                b = efg_b64 + '=' * (-len(efg_b64) % 4)
-                                efg_dict = json.loads(base64.b64decode(b))
-                                if 'duration_s' in efg_dict:
-                                    raw_duration = float(efg_dict['duration_s'])
-                                    break
-                        except Exception:
-                            pass
-            if raw_duration <= 0:
+            author = info.get('channel') or info.get('uploader') or 'instagram_user'
+            thumbnail = info.get('thumbnail')
+
+            raw_duration = info.get('duration')
+            if not raw_duration or raw_duration <= 0:
                 raw_duration = 30.0
             duration = format_duration(raw_duration)
             resolution = f"{hd_width} x {hd_height}"
@@ -620,7 +589,7 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
                 "sd_audio_url": None,
                 "preview_url": preview_url,
                 "direct_link": normalized_url,
-                "source": "instagram_live"
+                "source": "instagram_ytdlp"
             }
             register_media_meta(shortcode, res)
             return res
@@ -642,3 +611,60 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
                 os.remove(cookie_temp_file)
             except OSError:
                 pass
+
+
+def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
+    """
+    Extracts authentic Instagram media information and direct CDN video stream URLs.
+    Prioritizes full master audio stream extraction (speaking voice + mixed BGM)
+    via web manifest, with authenticated direct API fallback for gated/private posts.
+    """
+    normalized_url, shortcode = clean_instagram_url(url)
+
+    effective_cookie = cookie_string
+    if not effective_cookie and os.path.exists(COOKIE_FILE_PATH) and os.path.getsize(COOKIE_FILE_PATH) > 10:
+        try:
+            with open(COOKIE_FILE_PATH, "r", encoding="utf-8") as f:
+                effective_cookie = f.read().strip()
+        except Exception:
+            pass
+
+    # 1. First, check direct authenticated API if cookies are available (retrieves HD profile pic, caption, etc.)
+    direct_res = None
+    if effective_cookie and len(effective_cookie.strip()) > 10:
+        try:
+            direct_res = extract_via_direct_api(normalized_url, effective_cookie)
+        except Exception as e:
+            print(f"Direct API extraction attempt skipped: {e}")
+
+    # If direct_res found an authentic master DASH audio stream (voice + mixed audio):
+    if direct_res and direct_res.get('success') and direct_res.get('dash_audio_url'):
+        register_media_meta(shortcode, direct_res)
+        return direct_res
+
+    # 2. Extract via yt-dlp:
+    # yt-dlp extracts the web DASH manifest which contains the complete rendered master audio stream
+    # with the creator's speaking voice + synchronized BGM!
+    yt_res = extract_via_ytdlp(normalized_url, effective_cookie)
+    if yt_res and yt_res.get('success') and yt_res.get('has_audio'):
+        # If direct_res had the authentic creator avatar URL, attach it to yt_res
+        if direct_res and direct_res.get('author_avatar') and direct_res['author_avatar'].startswith('http'):
+            yt_res['author_avatar'] = direct_res['author_avatar']
+        register_media_meta(shortcode, yt_res)
+        return yt_res
+
+    # 3. If yt-dlp failed (e.g. login required, rate limit, private reel) or lacked audio:
+    # fall back to direct_res
+    if direct_res and direct_res.get('success'):
+        register_media_meta(shortcode, direct_res)
+        return direct_res
+
+    # 4. Fallback to yt_res even if audio was absent
+    if yt_res and yt_res.get('success'):
+        register_media_meta(shortcode, yt_res)
+        return yt_res
+
+    return yt_res or {
+        "success": False,
+        "message": "Could not retrieve media details from Instagram. Please ensure the post is public or add cookies."
+    }

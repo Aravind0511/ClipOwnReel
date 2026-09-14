@@ -11,7 +11,14 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse, Fil
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from extractor import extract_instagram_media, COOKIE_FILE_PATH, convert_to_netscape_content, get_media_meta
+from extractor import (
+    extract_instagram_media,
+    COOKIE_FILE_PATH,
+    convert_to_netscape_content,
+    get_media_meta,
+    clean_instagram_url,
+    shortcode_to_media_id,
+)
 from trimmer import trim_media
 from ffmpeg_utils import ensure_ffmpeg, mux_video_audio, extract_mp3_audio, NoAudioStreamError
 
@@ -578,12 +585,8 @@ async def system_diag(url: str = Query("https://www.instagram.com/reel/DbUlcPTTb
 
     direct_api_diag = {}
     try:
-        import sys
-        if BASE_DIR not in sys.path:
-            sys.path.insert(0, BASE_DIR)
-        import extractor
-        _, sc = extractor.clean_instagram_url(url)
-        mid = extractor.shortcode_to_media_id(sc)
+        _, sc = clean_instagram_url(url)
+        mid = shortcode_to_media_id(sc)
         direct_api_diag['shortcode'] = sc
         direct_api_diag['media_id'] = mid
         cookies_map = {}
