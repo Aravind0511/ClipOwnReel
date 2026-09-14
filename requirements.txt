@@ -1,5 +1,5 @@
 fastapi>=0.110.0
 uvicorn[standard]>=0.28.0
-yt-dlp>=2024.3.10
+yt-dlp>=2025.2.19
 requests>=2.31.0
 imageio-ffmpeg>=0.5.0

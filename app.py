@@ -30,16 +30,16 @@ app = FastAPI(
 # Mount static files directory
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-# In-memory or env-based cookie store
-ACTIVE_COOKIE = os.environ.get("INSTAGRAM_COOKIE", "").strip()
+# In-memory or env-based cookie store (supports INSTAGRAM_COOKIE and INSTAGRAM_SESSIONID)
+ACTIVE_COOKIE = (os.environ.get("INSTAGRAM_COOKIE", "") or os.environ.get("INSTAGRAM_SESSIONID", "")).strip()
 if ACTIVE_COOKIE:
     try:
         netscape_data = convert_to_netscape_content(ACTIVE_COOKIE)
         with open(COOKIE_FILE_PATH, "w", encoding="utf-8") as f:
             f.write(netscape_data)
-        print("Loaded authenticated Instagram cookie from INSTAGRAM_COOKIE environment variable.")
+        print("Loaded authenticated Instagram cookie from environment variable.")
     except Exception as e:
-        print(f"Failed to initialize INSTAGRAM_COOKIE: {e}")
+        print(f"Failed to initialize Instagram cookie from environment: {e}")
 
 class CookiePayload(BaseModel):
     cookie: str
@@ -70,10 +70,11 @@ async def fetch_info(
     clean_url = url.strip()
     
     # Check client cookie or header or ACTIVE_COOKIE
-    req_cookie = cookie or request.headers.get("X-IG-Cookie") or ACTIVE_COOKIE
-    if req_cookie and req_cookie.strip():
-        if not ACTIVE_COOKIE or ACTIVE_COOKIE != req_cookie.strip():
-            ACTIVE_COOKIE = req_cookie.strip()
+    req_cookie = (cookie if isinstance(cookie, str) else None) or request.headers.get("X-IG-Cookie") or ACTIVE_COOKIE
+    if req_cookie and isinstance(req_cookie, str) and req_cookie.strip():
+        cookie_clean = req_cookie.strip()
+        if not ACTIVE_COOKIE or ACTIVE_COOKIE != cookie_clean:
+            ACTIVE_COOKIE = cookie_clean
             try:
                 netscape_data = convert_to_netscape_content(ACTIVE_COOKIE)
                 with open(COOKIE_FILE_PATH, "w", encoding="utf-8") as f:
@@ -149,12 +150,13 @@ async def download_media(
             raise HTTPException(status_code=500, detail=f"Failed to generate MP3 audio: {err_msg}")
 
     # 2. Video Download with separate audio stream (mux DASH video + audio)
-    if audio_url and audio_url.strip() and audio_url.strip().lower() not in ["none", "null", "undefined", clean_url.lower()]:
+    valid_audio = audio_url.strip() if (isinstance(audio_url, str) and audio_url.strip()) else None
+    if valid_audio and valid_audio.lower() not in ["none", "null", "undefined", clean_url.lower()]:
         safe_filename = re.sub(r'[^a-zA-Z0-9_\-\.]', '_', filename)
         if not safe_filename.endswith(".mp4"):
             safe_filename += ".mp4"
         try:
-            muxed_path = mux_video_audio(clean_url, audio_url.strip())
+            muxed_path = mux_video_audio(clean_url, valid_audio)
             background_tasks.add_task(os.remove, muxed_path)
             return FileResponse(
                 muxed_path,
@@ -226,7 +228,8 @@ async def stream_media_for_preview(
         return FileResponse(clean_url, media_type="video/mp4", headers={"Access-Control-Allow-Origin": "*"})
 
     # Check if audio stream should be muxed for synchronized preview sound
-    clean_audio = audio_url.strip() if (audio_url and audio_url.strip() and audio_url.strip().lower() not in ["none", "null", "undefined", clean_url.lower()]) else None
+    valid_audio = audio_url.strip() if (isinstance(audio_url, str) and audio_url.strip()) else None
+    clean_audio = valid_audio if (valid_audio and valid_audio.lower() not in ["none", "null", "undefined", clean_url.lower()]) else None
     
     if clean_audio:
         import hashlib, shutil, tempfile
@@ -305,13 +308,15 @@ async def trim_download_media(
     if start < 0 or end <= start:
         raise HTTPException(status_code=400, detail="Invalid start/end trim timestamps. End must be greater than start.")
 
+    valid_audio = audio_url.strip() if (isinstance(audio_url, str) and audio_url.strip()) else None
+
     try:
         trimmed_file = trim_media(
             source_url=clean_url,
             start_time=start,
             end_time=end,
             media_type=media_type,
-            audio_url=audio_url.strip() if audio_url else None
+            audio_url=valid_audio
         )
 
         # File cleanup task after streaming
@@ -419,13 +424,16 @@ async def system_diag():
         has_audio_in_manifest = False
         manifest_len = 0
 
-    cookie_snippet = None
+    cookie_status = "Not configured"
     if os.path.exists(COOKIE_FILE_PATH):
         try:
             with open(COOKIE_FILE_PATH, "r", encoding="utf-8") as f:
-                cookie_snippet = f.read()[:200]
+                raw_c = f.read()
+                has_sess = "sessionid" in raw_c
+                has_uid = "ds_user_id" in raw_c
+                cookie_status = f"Active Netscape file ({len(raw_c)} bytes, sessionid={has_sess}, ds_user_id={has_uid})"
         except Exception as e:
-            cookie_snippet = f"Error reading: {e}"
+            cookie_status = f"Error reading: {e}"
 
     extract_diag = None
     try:
@@ -441,7 +449,7 @@ async def system_diag():
         "os": os.name,
         "active_cookie_len": len(ACTIVE_COOKIE),
         "cookie_file_exists": os.path.exists(COOKIE_FILE_PATH),
-        "cookie_snippet": cookie_snippet,
+        "cookie_status": cookie_status,
         "extract_diag": extract_diag,
         "ffmpeg_bin": exe,
         "ffmpeg_exists": os.path.exists(exe),

@@ -375,7 +375,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btnDownloadAudio.addEventListener('click', () => {
         if (!currentMedia) return;
         if (currentMedia.auth_required && !currentMedia.download_url_audio) {
-            showToast('Instagram restricted audio on cloud servers. Click "Add Cookie" in Settings to unlock MP3 audio.', 'warning', 5000);
+            showToast('Audio stream unavailable. Click "Add Cookie" in Settings to configure an authenticated session.', 'warning', 5000);
             if (settingsModal) settingsModal.classList.remove('hidden');
             return;
         }
