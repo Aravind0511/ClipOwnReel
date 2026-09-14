@@ -9,6 +9,7 @@ import tempfile
 import uuid
 import xml.etree.ElementTree as ET
 import requests
+import json
 import yt_dlp
 from ffmpeg_utils import ensure_ffmpeg
 
@@ -204,9 +205,26 @@ def extract_via_direct_api(url: str, cookie_string: str = None) -> dict:
                     hd_width = versions[0].get('width') or 720
                     hd_height = versions[0].get('height') or 1280
 
-                # Clip audio must always match the exact Reel video length (never use full 4-5min album tracks)
-                best_audio_url = dash_audio_url or video_sd
-                separate_audio_url = dash_audio_url if (video_hd and video_hd != video_sd) else None
+                # Extract music track offset if licensed audio is used
+                clips = item.get('clips_metadata') or {}
+                music_info = clips.get('music_info') or {}
+                music_asset = music_info.get('music_asset_info') or {}
+                music_consumption = music_info.get('music_consumption_info') or {}
+                music_url = music_asset.get('fast_start_progressive_download_url') or music_asset.get('progressive_download_url')
+                start_ms = music_consumption.get('audio_asset_start_time_in_ms', 0) or 0
+                audio_start_offset = round(float(start_ms) / 1000.0, 3) if start_ms else 0.0
+
+                if dash_audio_url:
+                    best_audio_url = dash_audio_url
+                    separate_audio_url = dash_audio_url if (video_hd and video_hd != video_sd) else None
+                    audio_start_offset = 0.0
+                elif music_url:
+                    best_audio_url = music_url
+                    separate_audio_url = music_url
+                else:
+                    best_audio_url = video_sd
+                    separate_audio_url = None
+                    audio_start_offset = 0.0
 
                 user = item.get('user', {})
                 author = user.get('username') or user.get('full_name') or 'instagram_user'
@@ -232,6 +250,7 @@ def extract_via_direct_api(url: str, cookie_string: str = None) -> dict:
                     'thumbnail': thumbnail,
                     'duration': duration,
                     'duration_seconds': max(1.0, round(raw_duration, 1)),
+                    'audio_start_offset': audio_start_offset,
                     'format': 'MP4 (H.264)',
                     'resolution': f'{hd_width} x {hd_height}',
                     'size': '~ 18.5 MB',
@@ -434,7 +453,25 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
             title = info.get('title') or info.get('description', '')[:100] or f"Instagram Reel [{shortcode}]"
             author = info.get('uploader') or info.get('uploader_id') or info.get('channel') or "instagram_user"
             thumbnail = info.get('thumbnail') or "https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=800&auto=format&fit=crop&q=80"
-            raw_duration = float(info.get('duration') or 30.0)
+            raw_duration = float(info.get('duration') or 0.0)
+            if raw_duration <= 0:
+                for f in info.get('formats', []):
+                    u = f.get('url', '')
+                    if 'efg=' in u:
+                        try:
+                            import base64, urllib.parse
+                            qs = urllib.parse.parse_qs(urllib.parse.urlparse(u).query)
+                            efg_b64 = qs.get('efg', [''])[0]
+                            if efg_b64:
+                                b = efg_b64 + '=' * (-len(efg_b64) % 4)
+                                efg_dict = json.loads(base64.b64decode(b))
+                                if 'duration_s' in efg_dict:
+                                    raw_duration = float(efg_dict['duration_s'])
+                                    break
+                        except Exception:
+                            pass
+            if raw_duration <= 0:
+                raw_duration = 30.0
             duration = format_duration(raw_duration)
             resolution = f"{hd_width} x {hd_height}"
             size = format_filesize(info.get('filesize') or info.get('filesize_approx'))
@@ -449,6 +486,7 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
                 "thumbnail": thumbnail,
                 "duration": duration,
                 "duration_seconds": max(1.0, round(raw_duration, 1)),
+                "audio_start_offset": 0.0,
                 "format": "MP4 (H.264)",
                 "resolution": resolution,
                 "size": size,

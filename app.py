@@ -103,7 +103,9 @@ async def download_media(
     url: str = Query(..., description="Direct media URL to download"),
     filename: str = Query("clipown_video.mp4", description="Output filename"),
     audio_url: str = Query(None, description="Optional separate audio stream URL to mux"),
-    media_type: str = Query("video", description="Download format type: video or audio")
+    media_type: str = Query("video", description="Download format type: video or audio"),
+    audio_start: float = Query(0.0, description="Optional audio start offset in seconds"),
+    duration: float = Query(None, description="Optional clip duration in seconds")
 ):
     """
     Stream or transcode video/audio file directly to client with forced attachment header.
@@ -124,7 +126,7 @@ async def download_media(
         if not safe_filename.endswith(".mp3"):
             safe_filename += ".mp3"
         try:
-            mp3_path = extract_mp3_audio(clean_url)
+            mp3_path = extract_mp3_audio(clean_url, start_time=audio_start, duration=duration)
             background_tasks.add_task(os.remove, mp3_path)
             return FileResponse(
                 mp3_path,
@@ -156,7 +158,7 @@ async def download_media(
         if not safe_filename.endswith(".mp4"):
             safe_filename += ".mp4"
         try:
-            muxed_path = mux_video_audio(clean_url, valid_audio)
+            muxed_path = mux_video_audio(clean_url, valid_audio, audio_start=audio_start, duration=duration)
             background_tasks.add_task(os.remove, muxed_path)
             return FileResponse(
                 muxed_path,
@@ -213,7 +215,9 @@ async def download_media(
 async def stream_media_for_preview(
     request: Request,
     url: str = Query(..., description="Direct media URL to stream"),
-    audio_url: str = Query(None, description="Optional audio stream URL to mux for synchronized preview sound")
+    audio_url: str = Query(None, description="Optional audio stream URL to mux for synchronized preview sound"),
+    audio_start: float = Query(0.0, description="Optional audio start offset in seconds"),
+    duration: float = Query(None, description="Optional clip duration in seconds")
 ):
     """
     Proxy video streams with Range request support for smooth browser video preview & scrubbing.
@@ -233,7 +237,7 @@ async def stream_media_for_preview(
     
     if clean_audio:
         import hashlib, shutil, tempfile
-        cache_key = hashlib.md5((clean_url + clean_audio).encode()).hexdigest()[:16]
+        cache_key = hashlib.md5((clean_url + clean_audio + str(audio_start) + str(duration)).encode()).hexdigest()[:16]
         temp_dir = tempfile.gettempdir()
         cached_preview = os.path.join(temp_dir, f"clipown_prev_{cache_key}.mp4")
         
@@ -241,7 +245,7 @@ async def stream_media_for_preview(
             return FileResponse(cached_preview, media_type="video/mp4", headers={"Access-Control-Allow-Origin": "*"})
             
         try:
-            muxed_file = mux_video_audio(clean_url, clean_audio)
+            muxed_file = mux_video_audio(clean_url, clean_audio, audio_start=audio_start, duration=duration)
             if os.path.exists(muxed_file) and os.path.getsize(muxed_file) > 1000:
                 try:
                     shutil.move(muxed_file, cached_preview)
@@ -294,7 +298,8 @@ async def trim_download_media(
     end: float = Query(..., description="End timestamp in seconds"),
     media_type: str = Query("video", description="Trim output format: video or audio"),
     filename: str = Query("clipown_trimmed.mp4", description="Output filename"),
-    audio_url: str = Query(None, description="Optional separate audio stream URL for DASH streams")
+    audio_url: str = Query(None, description="Optional separate audio stream URL for DASH streams"),
+    audio_start_offset: float = Query(0.0, description="Optional audio start offset in seconds for music tracks")
 ):
     """
     Trims video or audio using FFmpeg and streams the cut file directly to the client.
@@ -316,7 +321,8 @@ async def trim_download_media(
             start_time=start,
             end_time=end,
             media_type=media_type,
-            audio_url=valid_audio
+            audio_url=valid_audio,
+            audio_start_offset=audio_start_offset
         )
 
         # File cleanup task after streaming

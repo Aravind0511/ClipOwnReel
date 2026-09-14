@@ -78,10 +78,10 @@ class NoAudioStreamError(RuntimeError):
     """Raised when source media does not contain any audio stream to extract."""
     pass
 
-def mux_video_audio(video_url: str, audio_url: str) -> str:
+def mux_video_audio(video_url: str, audio_url: str, audio_start: float = 0.0, duration: float = None) -> str:
     """
     Muxes a video stream and audio stream into a single MP4 with stream copy in ~1-2 seconds.
-    First attempts direct URL streaming via FFmpeg. If that fails, downloads temp files and muxes.
+    Supports audio_start offset and duration to perfectly synchronize licensed music clips.
     """
     ffmpeg_bin = ensure_ffmpeg()
     temp_dir = tempfile.gettempdir()
@@ -96,15 +96,21 @@ def mux_video_audio(video_url: str, audio_url: str) -> str:
         "-headers", headers,
         "-i", video_url,
         "-headers", headers,
-        "-i", audio_url,
+    ]
+    if audio_start and float(audio_start) > 0:
+        cmd.extend(["-ss", f"{float(audio_start):.3f}"])
+    cmd.extend(["-i", audio_url])
+    if duration and float(duration) > 0:
+        cmd.extend(["-t", f"{float(duration):.3f}"])
+    cmd.extend([
         "-map", "0:v:0",
-        "-map", "1:a?",
+        "-map", "1:a:0",
         "-c:v", "copy",
         "-c:a", "aac",
         "-shortest",
         "-movflags", "+faststart",
         out_file
-    ]
+    ])
     res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if res.returncode == 0 and os.path.exists(out_file) and os.path.getsize(out_file) > 1000:
         return out_file
@@ -120,15 +126,21 @@ def mux_video_audio(video_url: str, audio_url: str) -> str:
             ffmpeg_bin,
             "-y",
             "-i", temp_v,
-            "-i", temp_a,
+        ]
+        if audio_start and float(audio_start) > 0:
+            fallback_cmd.extend(["-ss", f"{float(audio_start):.3f}"])
+        fallback_cmd.extend(["-i", temp_a])
+        if duration and float(duration) > 0:
+            fallback_cmd.extend(["-t", f"{float(duration):.3f}"])
+        fallback_cmd.extend([
             "-map", "0:v:0",
-            "-map", "1:a?",
+            "-map", "1:a:0",
             "-c:v", "copy",
             "-c:a", "aac",
             "-shortest",
             "-movflags", "+faststart",
             out_file
-        ]
+        ])
         res_fb = subprocess.run(fallback_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if res_fb.returncode != 0 or not os.path.exists(out_file) or os.path.getsize(out_file) == 0:
             err = res_fb.stderr if res_fb.stderr else 'Mux error'
@@ -146,9 +158,10 @@ def mux_video_audio(video_url: str, audio_url: str) -> str:
             except OSError:
                 pass
 
-def extract_mp3_audio(source_url: str) -> str:
+def extract_mp3_audio(source_url: str, start_time: float = 0.0, duration: float = None) -> str:
     """
     Extracts audio from video or audio stream and encodes it to authentic high-bitrate MP3.
+    Supports start_time offset and duration to extract the exact clip audio length.
     """
     ffmpeg_bin = ensure_ffmpeg()
     temp_dir = tempfile.gettempdir()
@@ -161,19 +174,21 @@ def extract_mp3_audio(source_url: str) -> str:
         ffmpeg_bin,
         "-y",
         "-headers", headers,
-        "-i", source_url,
+    ]
+    if start_time and float(start_time) > 0:
+        cmd.extend(["-ss", f"{float(start_time):.3f}"])
+    cmd.extend(["-i", source_url])
+    if duration and float(duration) > 0:
+        cmd.extend(["-t", f"{float(duration):.3f}"])
+    cmd.extend([
         "-vn",
         "-c:a", "libmp3lame",
         "-b:a", "192k",
         out_file
-    ]
+    ])
     res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if res.returncode == 0 and os.path.exists(out_file) and os.path.getsize(out_file) > 1000:
         return out_file
-        
-    # Check if direct run failed specifically because input has no audio stream
-    if res.stderr and "does not contain any stream" in res.stderr.lower():
-        raise NoAudioStreamError("The source media does not contain an audio stream.")
 
     # Fallback: download source to temp file and extract MP3
     temp_src = None
@@ -182,12 +197,18 @@ def extract_mp3_audio(source_url: str) -> str:
         fallback_cmd = [
             ffmpeg_bin,
             "-y",
-            "-i", temp_src,
+        ]
+        if start_time and float(start_time) > 0:
+            fallback_cmd.extend(["-ss", f"{float(start_time):.3f}"])
+        fallback_cmd.extend(["-i", temp_src])
+        if duration and float(duration) > 0:
+            fallback_cmd.extend(["-t", f"{float(duration):.3f}"])
+        fallback_cmd.extend([
             "-vn",
             "-c:a", "libmp3lame",
             "-b:a", "192k",
             out_file
-        ]
+        ])
         res_fb = subprocess.run(fallback_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if res_fb.returncode != 0 or not os.path.exists(out_file) or os.path.getsize(out_file) == 0:
             err = res_fb.stderr if res_fb.stderr else 'Extract error'

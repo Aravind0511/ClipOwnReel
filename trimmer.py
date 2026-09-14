@@ -44,7 +44,8 @@ def trim_media(
     start_time: float,
     end_time: float,
     media_type: str = "video",
-    audio_url: str = None
+    audio_url: str = None,
+    audio_start_offset: float = 0.0
 ) -> str:
     """
     Trims media between start_time and end_time (in seconds).
@@ -55,6 +56,7 @@ def trim_media(
         end_time: End timestamp in seconds
         media_type: 'video' (outputs MP4 with audio) or 'audio' (outputs MP3)
         audio_url: Optional separate audio stream URL for DASH streams
+        audio_start_offset: Optional audio start offset in seconds for music tracks
         
     Returns:
         Absolute filepath to the generated temporary file.
@@ -70,6 +72,7 @@ def trim_media(
         end_time = start_time + 1.0  # minimum 1 second
     
     duration = end_time - start_time
+    offset = float(audio_start_offset) if audio_start_offset else 0.0
 
     # Download source to temp file
     temp_input = None
@@ -85,16 +88,17 @@ def trim_media(
             
             if audio_url and audio_url.strip():
                 temp_audio = download_source_to_temp(audio_url.strip())
+                audio_seek = offset + start_time
                 cmd = [
                     ffmpeg_bin,
                     "-y",
                     "-ss", f"{start_time:.3f}",
                     "-i", temp_input,
-                    "-ss", f"{start_time:.3f}",
+                    "-ss", f"{audio_seek:.3f}",
                     "-i", temp_audio,
                     "-t", f"{duration:.3f}",
                     "-map", "0:v:0",
-                    "-map", "1:a?",
+                    "-map", "1:a:0",
                     "-c:v", "libx264",
                     "-preset", "ultrafast",
                     "-crf", "22",
@@ -126,10 +130,11 @@ def trim_media(
             # Audio only
             target_audio_url = audio_url.strip() if (audio_url and audio_url.strip()) else source_url
             temp_input = download_source_to_temp(target_audio_url)
+            audio_seek = offset + start_time
             cmd = [
                 ffmpeg_bin,
                 "-y",
-                "-ss", f"{start_time:.3f}",
+                "-ss", f"{audio_seek:.3f}",
                 "-i", temp_input,
                 "-t", f"{duration:.3f}",
                 "-vn",

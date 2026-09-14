@@ -358,6 +358,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (audioToUse) {
             downloadPath += `&audio_url=${encodeURIComponent(audioToUse)}`;
         }
+        if (currentMedia.audio_start_offset != null) {
+            downloadPath += `&audio_start=${encodeURIComponent(currentMedia.audio_start_offset)}`;
+        }
+        if (currentMedia.duration_seconds != null) {
+            downloadPath += `&duration=${encodeURIComponent(currentMedia.duration_seconds)}`;
+        }
         triggerBrowserDownload(getEndpointUrl(downloadPath));
     });
 
@@ -368,6 +374,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const audioToUse = currentMedia.download_url_audio || currentMedia.separate_audio_url;
         if (audioToUse) {
             downloadPath += `&audio_url=${encodeURIComponent(audioToUse)}`;
+        }
+        if (currentMedia.audio_start_offset != null) {
+            downloadPath += `&audio_start=${encodeURIComponent(currentMedia.audio_start_offset)}`;
+        }
+        if (currentMedia.duration_seconds != null) {
+            downloadPath += `&duration=${encodeURIComponent(currentMedia.duration_seconds)}`;
         }
         triggerBrowserDownload(getEndpointUrl(downloadPath));
     });
@@ -381,7 +393,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         showToast('Initiating MP3 Audio download (converting with FFmpeg)...', 'success');
         const audioSrc = currentMedia.download_url_audio || currentMedia.preview_url || currentMedia.download_url_sd || currentMedia.separate_audio_url || currentMedia.direct_link;
-        const downloadPath = `/api/download?url=${encodeURIComponent(audioSrc)}&filename=clipown_audio_${currentMedia.shortcode || 'audio'}.mp3&media_type=audio`;
+        let downloadPath = `/api/download?url=${encodeURIComponent(audioSrc)}&filename=clipown_audio_${currentMedia.shortcode || 'audio'}.mp3&media_type=audio`;
+        if (currentMedia.audio_start_offset != null) {
+            downloadPath += `&audio_start=${encodeURIComponent(currentMedia.audio_start_offset)}`;
+        }
+        if (currentMedia.duration_seconds != null) {
+            downloadPath += `&duration=${encodeURIComponent(currentMedia.duration_seconds)}`;
+        }
         triggerBrowserDownload(getEndpointUrl(downloadPath));
     });
 
@@ -459,10 +477,16 @@ document.addEventListener('DOMContentLoaded', () => {
             previewVideo.muted = false;
             previewVideo.volume = 1.0;
             const videoSource = data.preview_url || data.download_url_sd || data.download_url_hd || data.direct_link;
-            const audioSource = (videoSource === data.download_url_hd && data.separate_audio_url) ? data.separate_audio_url : null;
+            const audioSource = data.separate_audio_url || null;
             let streamEndpoint = `/api/stream?url=${encodeURIComponent(videoSource)}`;
             if (audioSource) {
                 streamEndpoint += `&audio_url=${encodeURIComponent(audioSource)}`;
+            }
+            if (data.audio_start_offset != null) {
+                streamEndpoint += `&audio_start=${encodeURIComponent(data.audio_start_offset)}`;
+            }
+            if (data.duration_seconds != null) {
+                streamEndpoint += `&duration=${encodeURIComponent(data.duration_seconds)}`;
             }
             previewVideo.src = getEndpointUrl(streamEndpoint);
             previewVideo.load();
@@ -708,6 +732,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const audioSource = currentMedia.download_url_audio || currentMedia.separate_audio_url;
         if (audioSource) {
             trimDownloadPath += `&audio_url=${encodeURIComponent(audioSource)}`;
+        }
+        if (currentMedia.audio_start_offset != null) {
+            trimDownloadPath += `&audio_start_offset=${encodeURIComponent(currentMedia.audio_start_offset)}`;
         }
 
         try {
