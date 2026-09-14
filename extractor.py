@@ -221,23 +221,31 @@ def extract_via_direct_api(url: str, cookie_string: str = None) -> dict:
                     try:
                         root = ET.fromstring(manifest)
                         dash_v = []
-                        for rep in root.findall('.//{urn:mpeg:dash:schema:mpd:2011}Representation'):
+                        dash_a = []
+                        for rep in root.iter():
+                            if not rep.tag.endswith('Representation'):
+                                continue
                             rep_id = rep.attrib.get('id', '')
                             mime = rep.attrib.get('mimeType', '')
                             w = int(rep.attrib.get('width', 0) or 0)
                             h = int(rep.attrib.get('height', 0) or 0)
-                            b_elem = rep.find('{urn:mpeg:dash:schema:mpd:2011}BaseURL')
-                            if b_elem is not None and b_elem.text:
-                                u = b_elem.text.strip()
-                                if 'audio' in mime.lower() or rep_id.endswith('a'):
-                                    dash_audio_url = u
-                                else:
-                                    dash_v.append((w, h, u))
+                            bw = int(rep.attrib.get('bandwidth', 0) or 0)
+                            for b_elem in rep.iter():
+                                if b_elem.tag.endswith('BaseURL') and b_elem.text:
+                                    u = b_elem.text.strip()
+                                    if 'audio' in mime.lower() or rep_id.endswith('a'):
+                                        dash_a.append((bw, u))
+                                    else:
+                                        dash_v.append((w, h, u))
+                                    break
                         if dash_v:
                             dash_v.sort(key=lambda x: (x[1], x[0]))
                             hd_width = dash_v[-1][0] or 1080
                             hd_height = dash_v[-1][1] or 1920
                             video_hd = dash_v[-1][2]
+                        if dash_a:
+                            dash_a.sort(key=lambda x: x[0])
+                            dash_audio_url = dash_a[-1][1]
                     except Exception:
                         pass
 
@@ -248,7 +256,7 @@ def extract_via_direct_api(url: str, cookie_string: str = None) -> dict:
                     hd_width = versions[0].get('width') or 720
                     hd_height = versions[0].get('height') or 1280
 
-                # Extract music track offset if licensed audio is used
+                # Extract music track info for fallback if DASH audio is absent
                 clips = item.get('clips_metadata') or {}
                 music_info = clips.get('music_info') or {}
                 music_asset = music_info.get('music_asset_info') or {}
@@ -269,20 +277,23 @@ def extract_via_direct_api(url: str, cookie_string: str = None) -> dict:
                 if not music_url:
                     music_url = orig_sound.get('progressive_download_url')
 
-                audio_start_offset = round(float(start_ms) / 1000.0, 3) if start_ms else 0.0
-
-                if music_url and start_ms:
+                # Prioritize master DASH audio stream: contains voice + mixed background music!
+                if dash_audio_url:
+                    best_audio_url = dash_audio_url
+                    separate_audio_url = dash_audio_url
+                    audio_start_offset = 0.0
+                elif music_url and start_ms:
                     best_audio_url = music_url
                     separate_audio_url = music_url
-                elif dash_audio_url:
-                    best_audio_url = dash_audio_url
-                    separate_audio_url = dash_audio_url if (video_hd and video_hd != video_sd) else None
+                    audio_start_offset = round(float(start_ms) / 1000.0, 3)
                 elif music_url:
                     best_audio_url = music_url
                     separate_audio_url = music_url
+                    audio_start_offset = 0.0
                 else:
                     best_audio_url = video_sd
                     separate_audio_url = None
+                    audio_start_offset = 0.0
 
                 user = item.get('user', {})
                 author = user.get('username') or user.get('full_name') or 'instagram_user'
@@ -476,22 +487,22 @@ def extract_instagram_media(url: str, cookie_string: str = None) -> dict:
                 video_hd = best_dash['url']
                 hd_height = best_dash.get('height') or 1080
                 hd_width = best_dash.get('width') or 1920
-                separate_audio_url = best_audio_url
+                separate_audio_url = best_audio_url if audio_formats else None
             elif progressive_formats:
                 video_hd = progressive_formats[-1]['url']
                 hd_height = progressive_formats[-1].get('height') or 720
                 hd_width = progressive_formats[-1].get('width') or 1280
-                separate_audio_url = None
+                separate_audio_url = best_audio_url if audio_formats else None
             elif any_video_formats:
                 video_hd = any_video_formats[-1]['url']
                 hd_height = any_video_formats[-1].get('height') or 720
                 hd_width = any_video_formats[-1].get('width') or 1280
-                separate_audio_url = None
+                separate_audio_url = best_audio_url if audio_formats else None
             else:
                 video_hd = info.get('url')
                 hd_height = info.get('height') or 1080
                 hd_width = info.get('width') or 1920
-                separate_audio_url = None
+                separate_audio_url = best_audio_url if audio_formats else None
 
             # Determine SD video stream
             if progressive_formats:
