@@ -601,21 +601,25 @@ async def system_diag(url: str = Query("https://www.instagram.com/reel/DbUlcPTTb
             'X-ASBD-ID': '198387',
             'Accept': '*/*',
         }
-        r_api = requests.get(f'https://i.instagram.com/api/v1/media/{mid}/info/', headers=h, cookies=cookies_map, timeout=10)
-        direct_api_diag['http_status'] = r_api.status_code
-        if r_api.status_code == 200:
-            rj = r_api.json()
-            items_list = rj.get('items', [])
-            if items_list:
-                it = items_list[0]
-                direct_api_diag['item_keys'] = [k for k in it.keys() if any(x in k.lower() for x in ['video', 'dash', 'clip', 'music', 'audio'])]
-                direct_api_diag['has_video_dash_manifest'] = 'video_dash_manifest' in it
-                if 'video_dash_manifest' in it:
-                    direct_api_diag['manifest_len'] = len(str(it['video_dash_manifest']))
-                    direct_api_diag['manifest_snippet'] = str(it['video_dash_manifest'])[:600]
-                direct_api_diag['has_dash_manifest'] = 'dash_manifest' in it
-                direct_api_diag['video_versions_count'] = len(it.get('video_versions', []))
-                direct_api_diag['clips_metadata_keys'] = list((it.get('clips_metadata') or {}).keys())
+        for base in ['https://www.instagram.com/api/v1', 'https://i.instagram.com/api/v1']:
+            r_api = requests.get(f'{base}/media/{mid}/info/', headers=h, cookies=cookies_map, timeout=10)
+            direct_api_diag['http_status'] = r_api.status_code
+            if r_api.status_code == 200:
+                rj = r_api.json()
+                items_list = rj.get('items', [])
+                if items_list:
+                    it = items_list[0]
+                    direct_api_diag['item_keys'] = [k for k in it.keys() if any(x in k.lower() for x in ['video', 'dash', 'clip', 'music', 'audio'])]
+                    direct_api_diag['has_video_dash_manifest'] = 'video_dash_manifest' in it
+                    if 'video_dash_manifest' in it:
+                        direct_api_diag['manifest_len'] = len(str(it['video_dash_manifest']))
+                        direct_api_diag['manifest_snippet'] = str(it['video_dash_manifest'])[:600]
+                    cm = it.get('clips_metadata') or {}
+                    direct_api_diag['clips_metadata_keys'] = list(cm.keys())
+                    orig = cm.get('original_sound_info') or {}
+                    direct_api_diag['orig_sound_url'] = orig.get('progressive_download_url')
+                    direct_api_diag['orig_sound_keys'] = list(orig.keys())
+                break
     except Exception as ex:
         direct_api_diag['error'] = str(ex)
 
