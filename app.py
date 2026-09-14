@@ -576,11 +576,49 @@ async def system_diag(url: str = Query("https://www.instagram.com/reel/DbUlcPTTb
     except Exception as e:
         extract_diag = f"Extract exception: {str(e)}"
 
+    direct_api_diag = {}
+    try:
+        from extractor import shortcode_to_media_id, extract_shortcode
+        sc = extract_shortcode(url)
+        mid = shortcode_to_media_id(sc)
+        direct_api_diag['shortcode'] = sc
+        direct_api_diag['media_id'] = mid
+        cookies_map = {}
+        if ACTIVE_COOKIE:
+            for part in ACTIVE_COOKIE.split(";"):
+                if "=" in part:
+                    k, v = part.strip().split("=", 1)
+                    cookies_map[k.strip()] = v.strip()
+        h = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+            'X-IG-App-ID': '936619743392459',
+            'X-ASBD-ID': '198387',
+            'Accept': '*/*',
+        }
+        r_api = requests.get(f'https://i.instagram.com/api/v1/media/{mid}/info/', headers=h, cookies=cookies_map, timeout=10)
+        direct_api_diag['http_status'] = r_api.status_code
+        if r_api.status_code == 200:
+            rj = r_api.json()
+            items_list = rj.get('items', [])
+            if items_list:
+                it = items_list[0]
+                direct_api_diag['item_keys'] = [k for k in it.keys() if any(x in k.lower() for x in ['video', 'dash', 'clip', 'music', 'audio'])]
+                direct_api_diag['has_video_dash_manifest'] = 'video_dash_manifest' in it
+                if 'video_dash_manifest' in it:
+                    direct_api_diag['manifest_len'] = len(str(it['video_dash_manifest']))
+                    direct_api_diag['manifest_snippet'] = str(it['video_dash_manifest'])[:600]
+                direct_api_diag['has_dash_manifest'] = 'dash_manifest' in it
+                direct_api_diag['video_versions_count'] = len(it.get('video_versions', []))
+                direct_api_diag['clips_metadata_keys'] = list((it.get('clips_metadata') or {}).keys())
+    except Exception as ex:
+        direct_api_diag['error'] = str(ex)
+
     return {
         "os": os.name,
         "active_cookie_len": len(ACTIVE_COOKIE),
         "cookie_file_exists": os.path.exists(COOKIE_FILE_PATH),
         "cookie_status": cookie_status,
+        "direct_api_diag": direct_api_diag,
         "extract_diag": extract_diag,
         "ffmpeg_bin": exe,
         "ffmpeg_exists": os.path.exists(exe),
